@@ -186,7 +186,6 @@ class Painter:
         self.listen_remote.set()
 
     def _send_msg(self, msg):
-        print('Painter sent:', msg)
         self.outport.send(msg)
 
     def send_note(self, msg):
@@ -257,7 +256,6 @@ class Painter:
                 continue
             if self.msg.type == 'clock':
                 continue
-            print('listener got:', self.msg)
             self.state.action(self.msg)
         print('stopped listening.')
         self.listen_remote.clear()
@@ -266,5 +264,5 @@ class Painter:
         listener = threading.Thread(target = self.listen, args = ())
         listener.start()
         self.switch_to_current_page()
-        #self.scroll_text(text='Welcome!', fps=15)
+        self.scroll_text(text='Welcome!', fps=15)
 

@@ -230,10 +230,6 @@ class Box(pygame.sprite.Sprite):
         else:
             return False
         
-    #def set_color(self, val, diff):
-    #    #self.color = val
-    #    print(val,diff)
-
     def crosshair(self):
         j,i = self.index
         for x, y in [(0,0), (-1,0), (1,0), (0,-1), (0,1)]:
@@ -256,26 +252,21 @@ class Box(pygame.sprite.Sprite):
         #Box.color = (0,0,0)
 
     def click(self):
-        #self.toggle_color()
         x, y = self.padXY
         Box.selected_x = x
         Box.selected_y = y
         self.send_msg()
-        print(self.padXY)
 
     def drag(self):
         self.send_msg()
 
     def send_msg(self):
-        print('send_msg called')
         msg = mido.Message('note_on', note=self.note)
-        print('Emulator (Box) sent to program_inbox:',msg,program_inbox.qsize(), 'items')
         self.outport.send(msg)
 
     @classmethod
     def receive_msg(cls):
         cls.msg = cls.inport.receive(block=False)
-        print('Emulator (Box class) received:', cls.msg)
 
     @classmethod
     def ping_device(cls):
@@ -381,7 +372,6 @@ class CCBox(Box):
             cls.LEFT_PANEL.append(box)
 
     def send_msg(self):
-        print('ccbox', self.cc, 'sending msg...')
         msg = mido.Message('control_change', control=self.cc, value=64)
         self.outport.send(msg)
 
@@ -396,14 +386,12 @@ class CCBox(Box):
         pass
 
     def scroll_text(self):
-        print('CCBox.scroll_text')
         # dont do this here, or any actions, instead use the state machine
         # and input processing pipeline in launchpad.py... TODO
         game.painter.scroll_text("see you in hell?", fps=20)
 
     def save(self):
         Box.save_map()
-        print(Box.bap)
 
     def load(self):
         Box.load_map()
@@ -446,10 +434,8 @@ def update(dt):
     msg = Box.msg
     if msg:
         if msg.type == 'note_on':
-            #print('Device (Box) got:', msg)
             Box.set_color(msg.note, msg.velocity)
         elif msg.type == 'sysex':
-            #print(msg)
             Box.parse_sysex(msg)
 
     for box in Box.group:
