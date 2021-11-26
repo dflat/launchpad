@@ -6,8 +6,8 @@ import math
 import colorsys
 import os
 
-ROOT = '/Users/Ricky/Code/Python/Games/Snake/LaunchpadSprite'
-SPRITESHEET = os.path.join(ROOT, 'sprites.png')
+ROOT_DIR = 'LaunchpadSprite'
+SPRITESHEET = os.path.join(ROOT_DIR, 'sprites.png')
 
 def load_sheet(path=SPRITESHEET):
     return Image.open(path)
