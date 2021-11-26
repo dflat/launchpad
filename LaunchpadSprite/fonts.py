@@ -137,10 +137,11 @@ class Marquee:
             frame = self._crop(offset)             
             self.frames.append(frame)
 
-    def animate(self, fps=15):
+    def animate(self, fps=15, callback=lambda: None):
         for frame in self.frames:
             self.print_frame(frame)
             time.sleep(1/fps)
+        return callback()
 
     def print_frame(self, frame, width=8): # TODO: overwrite this method as sysex
         if os.name == 'posix':

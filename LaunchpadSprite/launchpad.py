@@ -192,8 +192,9 @@ class Painter:
         self._send_msg(msg)
 
     def scroll_text(self, text, fps=20):
+        callback = self.switch_to_canvas
         text = SysexMarquee(message=text, painter=self)
-        t = threading.Thread(target=text.animate, args=(fps,))
+        t = threading.Thread(target=text.animate, args=(fps, callback))
         t.start()
 
     def send_sysex(self, page, mode = 0):
