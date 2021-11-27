@@ -131,10 +131,13 @@ class Box(pygame.sprite.Sprite):
     GRID_H = GRID_SIZE #- MARGIN*2
     BOX_W = int((GRID_W - PAD*(COLS -1) ) / (COLS))
     BOX_H = BOX_W
-    
+    #tri = pygame.Surface((BOX_W, BOX_H), pygame.SRCALPHA)
+    #pygame.draw.polygon(tri, (244,155,155), [(0,0),(10,0),(0,10)])
+
     def __init__(self, pos, index, scale_h=1, padXY=None, note=None):
         self.group.append(self)
-        self.image = pygame.Surface((self.BOX_W, scale_h*self.BOX_H))
+        self.image = pygame.Surface((self.BOX_W, scale_h*self.BOX_H), pygame.SRCALPHA)
+        #self._draw_poly()
         self.index = index
         self.rect = self.image.get_rect()
         self.rect.x = pos[0]
@@ -149,6 +152,9 @@ class Box(pygame.sprite.Sprite):
         self.padXY = padXY
         self.t = 0
         self.note = note
+
+    def _draw_poly(self):
+        self.mask = pygame.mask.from_surface(self.image)
 
     @classmethod
     def update_pads(cls):
@@ -327,12 +333,24 @@ class Box(pygame.sprite.Sprite):
 class CCBox(Box):
     ACTIONS = { 101: 'scroll_text', 102: 'save', 103: 'clear', 104: 'palette',
                 105: 'load'}
+    LABELS = {101: 'scroll', 106: 'load', 107:'save', 108:'colors'}
 
     def __init__(self, *args, cc=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.cc = cc
         self.hover_color = (200,200,200)
+        self.font_color = (0,0,0)
+        self._make_label()
 
+    def _make_label(self):
+        text = CCBox.LABELS.get(self.cc, 'none')
+        self.label = game.font.render(text, 1, self.font_color)
+        w, h  = self.label.get_width(), self.label.get_height()
+        xoffset = (self.image.get_width() - w) // 2
+        yoffset = (self.image.get_height() - h) // 2
+        self.label_offset = (xoffset, yoffset)
+        
+        
     @classmethod
     def build_cc(cls):
         cls.CONTROLS = []
@@ -377,6 +395,7 @@ class CCBox(Box):
 
     def hover(self):
         self.color = self.hover_color
+        self.image.blit(self.label, self.label_offset)
 
     def click(self):
         self.send_msg()
@@ -464,18 +483,19 @@ class Game:
         pygame.init()
         pygame.display.set_caption("Launchpad Pro Emulator")
         pygame.mouse.set_cursor(*pygame.cursors.broken_x)
+        self.font = pygame.font.SysFont(pygame.font.get_default_font(), 24)
         self.w = w
         self.h = h
         self.fps = 60.0
         self.fps_clock = pygame.time.Clock()
         self.screen = pygame.display.set_mode((w,h))
         self.painter = MultiPainter() 
-        Box._init_ports()
-        Box.build_map()
-        CCBox.build_cc()
 
     def run(self):
         dt = 1/self.fps # dt is the time since last frame.
+        Box._init_ports()
+        Box.build_map()
+        CCBox.build_cc()
         while True:
             update(dt) 
             draw(self.screen)
