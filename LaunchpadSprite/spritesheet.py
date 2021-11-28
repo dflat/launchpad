@@ -5,8 +5,9 @@ import random
 import math
 import colorsys
 import os
+from . import config
 
-ROOT_DIR = 'LaunchpadSprite'
+ROOT_DIR = config.PROJECT_ROOT 
 SPRITESHEET = os.path.join(ROOT_DIR, 'sprites.png')
 
 def load_sheet(path=SPRITESHEET):

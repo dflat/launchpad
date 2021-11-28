@@ -13,7 +13,7 @@ from LaunchpadSprite import launchpad
 import mido
 import queue
 import pickle 
-LAUNCHPAD_DIR = 'LaunchpadSprite'
+import LaunchpadSprite.config as config
 
 program_inbox = queue.Queue()
 device_inbox = queue.Queue()
@@ -106,7 +106,7 @@ def random_rgb():
     return tuple(random.randint(0,255) for i in range(3))
 
 def load_color_palette():
-    path = os.path.join(LAUNCHPAD_DIR, 'palette_colors.pickle')
+    path = os.path.join(config.PROJECT_ROOT, 'palette_colors.pickle')
     with open(path, 'rb') as f:
         return pickle.load(f)
 

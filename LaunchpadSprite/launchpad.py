@@ -4,6 +4,7 @@ import pickle
 import uuid
 import copy
 from . import fonts
+from . import ddr
 
 ###------------ helper functions ------------###
 def open_output():
@@ -43,7 +44,7 @@ class SysexMarquee(fonts.Marquee):
 class State:
     QUICK_SLOTS = [19,29,39,49,59,69,79,89]
     CONTROL_KEYS = list(range(101,109))
-    CTRL = {'marquee':101, 'load':106, 'save':107, 'palette':108} 
+    CTRL = {'marquee':101, 'ddr': 102, 'load':106, 'save':107, 'palette':108} 
     def __init__(self, painter):
         self.painter = painter
         self.new_state(State_Canvas)
@@ -103,11 +104,16 @@ class State_PaletteAlt(State):
         self.painter.switch_to_canvas()
         self.new_state(State_Canvas)
 
+class State_DDR(State):
+    def action(self, msg):
+        pass
+
 class State_Canvas(State):
     rule = {State.CTRL['save']: ('State_SavePending', 'no_action'),
             State.CTRL['load']: ('State_LoadPending', 'no_action'),
             State.CTRL['palette']: ('State_Palette', 'to_palette'),
             State.CTRL['marquee']: ('State_Canvas', 'marquee'),
+            State.CTRL['ddr']: ('State_Canvas', 'to_ddr'), # TODO: fix state
             }
     def action(self, msg):
         if self.is_pad_press(msg):
@@ -123,8 +129,11 @@ class State_Canvas(State):
         self.painter.switch_to_palette(0)
     def marquee(self):
         self.painter.scroll_text('See you in hell?', fps=20)
+    def to_ddr(self):
+        self.painter.play_ddr_minigame('mario_theme.mid', rate=1)
     def no_action(self):
         pass
+
 
 class Page:
     def __init__(self,colors, quick_id = None):
@@ -197,6 +206,15 @@ class Painter:
         t = threading.Thread(target=text.animate, args=(fps, callback))
         t.start()
 
+    def as_page(self, colors):
+        return Page(colors)
+
+    def play_ddr_minigame(self, midi_file_path, rate=1):
+        play_track = ddr.PlayTrack(midi_file_path, painter=self)
+        t = threading.Thread(target=play_track.animate, args=(rate,))
+        t.start()
+        print('playing ddr minigame...')
+        
     def send_sysex(self, page, mode = 0):
         """ 
         builds and sends a sysex msg for a page

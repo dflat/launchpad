@@ -2,10 +2,9 @@ from PIL import Image
 import string
 import os 
 import time
+from . import config
 
-#ROOT_DIR = '/Users/Ricky/Code/Python/Games/Snake/LaunchpadSprite'
-ROOT_DIR = 'LaunchpadSprite'
-FONT_ITALIC_IMG = os.path.join(ROOT_DIR, 'font_italic.png')
+FONT_ITALIC_IMG = os.path.join(config.PROJECT_ROOT, 'font_italic.png')
 
 class Character:
     SHADES = ['m', 'e', 'x', 'o', ' ']
