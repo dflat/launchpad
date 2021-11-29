@@ -95,10 +95,16 @@ class PlayTrack:
             recolored.append(base_color + row//2)
         return recolored         
 
-    def animate(self, rate=1):
+    def animate(self, rate=1, autoplay=False):
         for i in range(len(self.frames)):
             # todo: remap midi notes in sync with frames
+            # todo: give a variable timing-per-segment track to handle triplets 
+            self.painter.remap_sampler(self.frames[i])
             self.painter.send_sysex(self.painter.as_page(self.colored_frames[i]))
+            if autoplay:
+                for j in range(56, 64):
+                    if self.frames[i][j] > 0:
+                        self.painter.sampler.play_note(j)
             time.sleep(self.seconds_per_segment*rate)
         print('midi track finished.')
 

@@ -3,8 +3,12 @@ import threading
 import pickle
 import uuid
 import copy
+import pygame
+import os
 from . import fonts
 from . import ddr
+from . import config
+
 
 ###------------ helper functions ------------###
 def open_output():
@@ -22,6 +26,9 @@ def set_programmer_mode(output):
     output.close()
 
 def build_padmap(start=81, stop=1, step=-10, cols=8):
+    """
+    Maps pad index (0-64) => Launchpad Developer Mode default midi notes
+    """
     padmap = {}
     i = 0
     for start in range(start, stop, step):
@@ -44,9 +51,11 @@ class SysexMarquee(fonts.Marquee):
 class State:
     QUICK_SLOTS = [19,29,39,49,59,69,79,89]
     CONTROL_KEYS = list(range(101,109))
-    CTRL = {'marquee':101, 'ddr': 102, 'load':106, 'save':107, 'palette':108} 
+    CTRL = {'marquee':101, 'ddr': 102, 'ddr_auto': 103, 'load':106,
+            'save':107, 'palette':108} 
     def __init__(self, painter):
-        self.painter = painter
+        self.painter = painter      # shortcut to controller objects (painter/sampler)
+        self.sampler = painter.sampler
         self.new_state(State_Canvas)
     def new_state(self, state):
         self.__class__ = state
@@ -106,14 +115,25 @@ class State_PaletteAlt(State):
 
 class State_DDR(State):
     def action(self, msg):
-        pass
+        if self.is_pad_press(msg):
+            pad_index = self.painter.rev_padmap[msg.note] 
+            self.sampler.play_note(pad_index)
+        elif self.is_cc_press(msg):
+            if msg.control in self.CONTROL_KEYS:
+                if msg.control == State.CTRL['ddr']:
+                    self.to_canvas()
+
+    def to_canvas(self):
+        self.painter.switch_to_canvas() # todo: set up a thread remote for ddr feed
+        self.new_state(State_Canvas)
 
 class State_Canvas(State):
     rule = {State.CTRL['save']: ('State_SavePending', 'no_action'),
             State.CTRL['load']: ('State_LoadPending', 'no_action'),
             State.CTRL['palette']: ('State_Palette', 'to_palette'),
             State.CTRL['marquee']: ('State_Canvas', 'marquee'),
-            State.CTRL['ddr']: ('State_Canvas', 'to_ddr'), # TODO: fix state
+            State.CTRL['ddr']: ('State_DDR', 'to_ddr'), # TODO: fix state
+            State.CTRL['ddr_auto']: ('State_DDR', 'to_ddr_auto'), # TODO: fix state
             }
     def action(self, msg):
         if self.is_pad_press(msg):
@@ -130,7 +150,9 @@ class State_Canvas(State):
     def marquee(self):
         self.painter.scroll_text('See you in hell?', fps=20)
     def to_ddr(self):
-        self.painter.play_ddr_minigame('mario_theme.mid', rate=1)
+        self.painter.play_ddr_minigame('mario_theme.mid', rate=1, autoplay=False)
+    def to_ddr_auto(self):
+        self.painter.play_ddr_minigame('mario_theme.mid', rate=1, autoplay=True)
     def no_action(self):
         pass
 
@@ -166,6 +188,34 @@ class Gallery:
 PADMAP = build_padmap()
 REV_PADMAP = {v:k for k,v  in PADMAP.items()}
 
+class Sampler:
+    PAD_TO_MIDI = { } # pad_index -> midi_note
+    MIDI_TO_SAMPLE = { } # midi note -> audio file
+    SAMPLE_ROOT = os.path.join(config.PROJECT_ROOT, 'assets/samples')
+
+    def __init__(self, sample_dir):
+        pygame.mixer.init()
+        pygame.mixer.set_num_channels(16)
+        self._load_samples(sample_dir)
+
+    def _load_samples(self, sample_dir):
+        paths = os.scandir(os.path.join(self.SAMPLE_ROOT, sample_dir))
+        for path in paths:
+            note = int(path.name.split('.')[0])
+            sound = pygame.mixer.Sound(path.path)
+            self.MIDI_TO_SAMPLE[note] = sound
+        self.remap(list(range(64)))  # todo: maybe do a better mapping here
+
+    def play_note(self, pad_index):
+        note = self.PAD_TO_MIDI[pad_index]
+        sound = self.MIDI_TO_SAMPLE.get(note)
+        if sound:
+            sound.play()
+
+    def remap(self, notes):
+        for i in range(len(notes)):
+            self.PAD_TO_MIDI[i] = notes[i] 
+
 class Painter:
     gallery = Gallery()
     def __init__(self):
@@ -179,6 +229,7 @@ class Painter:
         self.canvas = Page([0]*64)
         self.palettes = [Page([i for i in range(64)]),
                         Page([i for i in range(64,128)])]
+        self.sampler = Sampler('dumb')
         self.state = State(self)
         self.run()
 
@@ -209,9 +260,13 @@ class Painter:
     def as_page(self, colors):
         return Page(colors)
 
-    def play_ddr_minigame(self, midi_file_path, rate=1):
+    def remap_sampler(self, notes):
+        self.sampler.remap(notes)
+
+
+    def play_ddr_minigame(self, midi_file_path, rate=1, autoplay=False):
         play_track = ddr.PlayTrack(midi_file_path, painter=self)
-        t = threading.Thread(target=play_track.animate, args=(rate,))
+        t = threading.Thread(target=play_track.animate, args=(rate, autoplay))
         t.start()
         print('playing ddr minigame...')
         
