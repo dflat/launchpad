@@ -8,7 +8,9 @@ from . import config
 MIDI_DIR = 'assets/midi'
 MIDI_DIR_PATH = os.path.join(config.PROJECT_ROOT, MIDI_DIR)
 
-def build_play_track(segments, note_set, cols=8):
+def build_play_track(segments, note_set, cols):
+    # todo: make playtrack entries into objects instead of
+    #      plain ints, to store extra metadata (e.g is_triplet, color)
     def build_display_row(track_row):
         display_row = [-1]*8 # fix a blank color e.g. -1 
         n = len(track_row)
@@ -62,6 +64,8 @@ def flip_frame_for_display(frame):
 class PlayTrack:
     FRAME_RECOLOR_MAP = {-1: 3, -2: 0,  0: 8, 1: 32, 2: 12, 3: 44,
                             4: 4, 5: 24, 6:47, 7:56 }
+    INTRO_PAD_FRAMES = 8
+    OUTRO_PAD_FRAMES = 8
     def __init__(self, midi_path, painter, bpm=120, ticks_per_beat=480, segment_ticks=40):
         self.midi_path = os.path.join(MIDI_DIR_PATH, midi_path)
         self.painter = painter
@@ -76,7 +80,17 @@ class PlayTrack:
     def seconds_per_segment(self):
         return (self.segment_ticks/self.ticks_per_beat)*(60/self.bpm)
 
-    def _recolor_frame(self, frame):
+    def _ticks_to_seconds(self, ticks):
+        return (ticks/self.ticks_per_beat)*(60/self.bpm)
+
+    def _recolor_frames(self):
+        recolored_frames = []
+        for i in range(len(self.frames)):
+            recolored = self._recolor_frame(self.frames[i], i)
+            recolored_frames.append(recolored)
+        return recolored_frames
+
+    def _recolor_frame(self, frame, frame_no):
         recolored = []
         for i in range(len(frame)):
             blank = True
@@ -97,15 +111,15 @@ class PlayTrack:
 
     def animate(self, rate=1, autoplay=False):
         for i in range(len(self.frames)):
-            # todo: remap midi notes in sync with frames
-            # todo: give a variable timing-per-segment track to handle triplets 
+            # todo: give a pre-frame lead grace period to allow early hits
             self.painter.remap_sampler(self.frames[i])
             self.painter.send_sysex(self.painter.as_page(self.colored_frames[i]))
             if autoplay:
                 for j in range(56, 64):
                     if self.frames[i][j] > 0:
                         self.painter.sampler.play_note(j)
-            time.sleep(self.seconds_per_segment*rate)
+            frame_duration = self._ticks_to_seconds(self.timing_track[i])
+            time.sleep(frame_duration / rate)
         print('midi track finished.')
 
     def _prepare_play_track(self, re_segment=True):
@@ -118,7 +132,8 @@ class PlayTrack:
             self._re_segment()
         self.play_track = build_play_track(self.segments, self.note_set, cols=4)
         self.frames = self._build_frames(self.play_track)
-        self.colored_frames = [self._recolor_frame(f) for f in self.frames]
+        self.colored_frames = self._recolor_frames()
+        #self.colored_frames = [self._recolor_frame(f) for f in self.frames]
 
     def _build_frames(self, play_track):
         n = len(play_track)//8 - 8
@@ -129,15 +144,37 @@ class PlayTrack:
             frames.append(flipped)
         return frames
 
-    def _re_segment(self, seg_ticks=40, new_seg_ticks=120):
+    def _re_segment(self, seg_ticks=40):
+        # introduce variable timing to the playtrack
+        # e.g. handle triplets w/different speed than straight-divisions
+        segs_per_quarter_note = 12
+        timing_track = []
         new_segments = []
-        n_to_compress = new_seg_ticks//seg_ticks
-        for i in range(0, len(self.segments), n_to_compress):
-            new_seg = []
-            for seg in self.segments[i:i+n_to_compress]:
-                new_seg.extend(seg)
-            new_segments.append(deepcopy(new_seg))
-        self.segment_ticks = new_seg_ticks # update state to reflect resegmentation
+        for _ in range(self.INTRO_PAD_FRAMES): # intro pad timing
+            timing_track.append(seg_ticks*3)
+        def divide_into_three(quarter_note):
+            divisions = quarter_note[::4]
+            for triplet_hit in divisions:
+                new_segments.append(triplet_hit)
+                timing_track.append(seg_ticks*4)
+        def divide_into_four(quarter_note):
+            divisions = quarter_note[::3]
+            for sixteenth_hit in divisions:
+                new_segments.append(sixteenth_hit)
+                timing_track.append(seg_ticks*3)
+        strikes = { 'triplet': (1,0,0,0,1,0,0,0,1,0,0,0) }
+        # check a quarter note at a time, check for triplet spacing
+        for i in range(0, len(self.segments), segs_per_quarter_note):
+            quarter_note = self.segments[i:i+segs_per_quarter_note]
+            strike_map = tuple(1 if x else 0 for x in quarter_note)
+            if strike_map == strikes['triplet']:
+                divide_into_three(quarter_note)
+            else:
+                divide_into_four(quarter_note)
+
+        for _ in range(self.OUTRO_PAD_FRAMES): # todo: fix consistency with padding
+            timing_track.append(seg_ticks*3)
+        self.timing_track = timing_track
         self.segments = new_segments
 
 def midi_segmenter(msgs: mido.MidiTrack):

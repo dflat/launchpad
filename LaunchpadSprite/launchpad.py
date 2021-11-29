@@ -338,5 +338,5 @@ class Painter:
         listener = threading.Thread(target = self.listen, args = ())
         listener.start()
         self.switch_to_current_page()
-        self.scroll_text(text='Welcome!', fps=15)
+        self.scroll_text(text='Welcome!', fps=25)
 
