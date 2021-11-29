@@ -109,17 +109,25 @@ class PlayTrack:
             recolored.append(base_color + row//2)
         return recolored         
 
-    def animate(self, rate=1, autoplay=False):
+    def animate(self, rate=1, autoplay=False, remote=None):
+        self.painter.remap_sampler(self.frames[0])
         for i in range(len(self.frames)):
             # todo: give a pre-frame lead grace period to allow early hits
-            self.painter.remap_sampler(self.frames[i])
+            #self.painter.remap_sampler(self.frames[i])
             self.painter.send_sysex(self.painter.as_page(self.colored_frames[i]))
             if autoplay:
                 for j in range(56, 64):
                     if self.frames[i][j] > 0:
                         self.painter.sampler.play_note(j)
-            frame_duration = self._ticks_to_seconds(self.timing_track[i])
-            time.sleep(frame_duration / rate)
+            frame_duration = self._ticks_to_seconds(self.timing_track[i]) / rate
+            lead_time = .05
+            frame_delay = frame_duration - lead_time
+            time.sleep(frame_delay)
+            try:
+                self.painter.remap_sampler(self.frames[i+1])
+            except IndexError:
+                break
+            time.sleep(lead_time)
         print('midi track finished.')
 
     def _prepare_play_track(self, re_segment=True):

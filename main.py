@@ -8,7 +8,6 @@ from pygame.locals import *
 import numpy as np
 import random
 import pygame_menu
-from LaunchpadSprite.spritesheet import get_sprite_pixels, SPRITES
 from LaunchpadSprite import launchpad
 import mido
 import queue
@@ -164,8 +163,9 @@ class Box(pygame.sprite.Sprite):
                 
     @classmethod
     def display_image(cls, x, y):
-        pixels = get_sprite_pixels(SPRITES, x, y)
-        cls.load_page(pixels)
+        pass
+        #pixels = get_sprite_pixels(SPRITES, x, y)
+        #cls.load_page(pixels)
     
     @classmethod
     def random_image(cls):
