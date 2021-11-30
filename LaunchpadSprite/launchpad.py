@@ -209,10 +209,12 @@ class Sampler:
         pygame.mixer.set_num_channels(32)
         self._load_samples(sample_dir)
 
+    def _load_backing_track(self, fname='mario.mp3'):
+        pygame.mixer.music.load(os.path.join(config.PROJECT_ROOT,
+                                'assets', 'music', fname))
+
     def _load_samples(self, sample_dir):
         paths = os.scandir(os.path.join(self.SAMPLE_ROOT, sample_dir))
-        pygame.mixer.music.load(os.path.join(config.PROJECT_ROOT,
-                                'assets', 'music', 'mario.mp3'))
         self.MISS_SOUND = pygame.mixer.Sound(os.path.join(self.SAMPLE_ROOT, 'boo.wav'))
         for path in paths:
             note = int(path.name.split('.')[0])

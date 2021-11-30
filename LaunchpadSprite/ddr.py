@@ -111,12 +111,21 @@ class PlayTrack:
 
     def animate(self, rate=1, autoplay=False, remote=None):
         # todo: drift-correct timing...
+        if rate == 0.5:
+            backing_track = 'mario_halftime.mp3'
+        elif rate == 1:
+            backing_track = 'mario.mp3'
+        else:
+            backing_track = None
+        if backing_track:
+            self.painter.sampler._load_backing_track(backing_track)
+
         print(self._ticks_to_seconds(sum(self.timing_track)))
         t0 = time.time()
         input_time = 0
         actual_sleep = 0
         for i in range(len(self.frames)):
-            if i == self.INTRO_PAD_FRAMES:
+            if i == self.INTRO_PAD_FRAMES and backing_track:
                 self.painter.sampler.play_backing_track()
             # todo: give a pre-frame lead grace period to allow early hits
             input_time += self.timing_track[i]
