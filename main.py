@@ -7,7 +7,6 @@ import pygame
 from pygame.locals import *
 import numpy as np
 import random
-import pygame_menu
 from LaunchpadSprite import launchpad
 import mido
 import queue
