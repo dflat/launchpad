@@ -161,9 +161,9 @@ class State_Canvas(State):
     def marquee(self):
         self.painter.scroll_text('See you in hell?', fps=20)
     def to_ddr(self):
-        self.painter.play_ddr_minigame('mario_theme.mid', rate=1, autoplay=False)
+        self.painter.play_ddr_minigame('mario_theme.mid', rate=0.5, autoplay=False)
     def to_ddr_auto(self):
-        self.painter.play_ddr_minigame('mario_theme.mid', rate=1, autoplay=True)
+        self.painter.play_ddr_minigame('mario_theme.mid', rate=0.5, autoplay=True)
     def no_action(self):
         pass
 
@@ -207,13 +207,13 @@ class Sampler:
     def __init__(self, sample_dir):
         pygame.mixer.init()
         pygame.mixer.set_num_channels(32)
-        self._load_samples(sample_dir)
+        self.load_samples(sample_dir)
 
     def _load_backing_track(self, fname='mario.mp3'):
         pygame.mixer.music.load(os.path.join(config.PROJECT_ROOT,
                                 'assets', 'music', fname))
 
-    def _load_samples(self, sample_dir):
+    def load_samples(self, sample_dir):
         paths = os.scandir(os.path.join(self.SAMPLE_ROOT, sample_dir))
         self.MISS_SOUND = pygame.mixer.Sound(os.path.join(self.SAMPLE_ROOT, 'boo.wav'))
         for path in paths:

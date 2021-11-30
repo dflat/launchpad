@@ -1,6 +1,6 @@
 import wave
 import os
-
+# default segments should be 37 for 3 octaves and a finishing note
 def chop_into_samples(wav_path, out_dir, n_segments, seconds_per_cut=1,
                         start_note=48):
     f = wave.open(wav_path, 'rb')

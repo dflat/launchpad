@@ -113,6 +113,7 @@ class PlayTrack:
         # todo: drift-correct timing...
         if rate == 0.5:
             backing_track = 'mario_halftime.mp3'
+            self.painter.sampler.load_samples('dyno_sim')
         elif rate == 1:
             backing_track = 'mario.mp3'
         else:
@@ -128,7 +129,7 @@ class PlayTrack:
             if i == self.INTRO_PAD_FRAMES and backing_track:
                 self.painter.sampler.play_backing_track()
             # todo: give a pre-frame lead grace period to allow early hits
-            input_time += self.timing_track[i]
+            input_time += self.timing_track[i] / rate
 
             self.painter.remap_sampler(self.frames[i])
             self.painter.send_sysex(self.painter.as_page(self.colored_frames[i]))
