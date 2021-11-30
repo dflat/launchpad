@@ -110,25 +110,42 @@ class PlayTrack:
         return recolored         
 
     def animate(self, rate=1, autoplay=False, remote=None):
-        self.painter.remap_sampler(self.frames[0])
+        # todo: drift-correct timing...
+        print(self._ticks_to_seconds(sum(self.timing_track)))
+        t0 = time.time()
+        input_time = 0
+        actual_sleep = 0
         for i in range(len(self.frames)):
+            if i == self.INTRO_PAD_FRAMES:
+                self.painter.sampler.play_backing_track()
             # todo: give a pre-frame lead grace period to allow early hits
-            #self.painter.remap_sampler(self.frames[i])
+            input_time += self.timing_track[i]
+
+            self.painter.remap_sampler(self.frames[i])
             self.painter.send_sysex(self.painter.as_page(self.colored_frames[i]))
             if autoplay:
                 for j in range(56, 64):
                     if self.frames[i][j] > 0:
                         self.painter.sampler.play_note(j)
-            frame_duration = self._ticks_to_seconds(self.timing_track[i]) / rate
-            lead_time = .05
-            frame_delay = frame_duration - lead_time
-            time.sleep(frame_delay)
-            try:
-                self.painter.remap_sampler(self.frames[i+1])
-            except IndexError:
-                break
-            time.sleep(lead_time)
-        print('midi track finished.')
+            #frame_duration = self._ticks_to_seconds(self.timing_track[i]) / rate
+            #lead_time = .05
+            #frame_delay = frame_duration - lead_time
+            #time.sleep(frame_delay)
+            #try:
+            #    self.painter.remap_sampler(self.frames[i+1])
+            #except IndexError:
+            #    break
+            #time.sleep(lead_time)
+            playback_time = time.time() - t0
+            duration_to_next_frame = self._ticks_to_seconds(input_time) - playback_time
+            if duration_to_next_frame > 0.0:
+                actual_sleep += duration_to_next_frame
+                time.sleep(duration_to_next_frame)
+        t1 = time.time()
+        elapsed = t1 - t0# - 16*self._ticks_to_seconds(120*16)
+        print(f'midi track finished in {elapsed:.2f} seconds.')
+        print(f'actual_sleep: {actual_sleep:.2f}')
+        print(f'input_time: {self._ticks_to_seconds(input_time):.2f}')
 
     def _prepare_play_track(self, re_segment=True):
         self.midi_file = mido.MidiFile(self.midi_path)
@@ -138,7 +155,7 @@ class PlayTrack:
                         and m.type == 'note_on')
         if re_segment:
             self._re_segment()
-        self.play_track = build_play_track(self.segments, self.note_set, cols=4)
+        self.play_track = build_play_track(self.segments, self.note_set, cols=3)
         self.frames = self._build_frames(self.play_track)
         self.colored_frames = self._recolor_frames()
         #self.colored_frames = [self._recolor_frame(f) for f in self.frames]

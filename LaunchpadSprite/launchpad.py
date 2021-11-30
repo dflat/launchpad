@@ -1,4 +1,5 @@
 import mido
+import re
 import threading
 import pickle
 import uuid
@@ -12,11 +13,21 @@ from . import config
 
 ###------------ helper functions ------------###
 def open_output():
-    name = mido.get_output_names()[1]
+    output_names = mido.get_output_names()
+    for name in output_names:
+        if re.match(r"launchpad.*midi", name.lower()):
+            break
+    else:
+        name = output_names[1]
     return mido.open_output(name)
 
 def open_input():
-    name = mido.get_input_names()[0]
+    input_names = mido.get_input_names()
+    for name in input_names:
+        if re.match(r"launchpad.*midi", name.lower()):
+            break
+    else:
+        name = input_names[0]
     return mido.open_input(name)
 
 def set_programmer_mode(output):
@@ -195,20 +206,26 @@ class Sampler:
 
     def __init__(self, sample_dir):
         pygame.mixer.init()
-        pygame.mixer.set_num_channels(16)
+        pygame.mixer.set_num_channels(32)
         self._load_samples(sample_dir)
 
     def _load_samples(self, sample_dir):
         paths = os.scandir(os.path.join(self.SAMPLE_ROOT, sample_dir))
+        pygame.mixer.music.load(os.path.join(config.PROJECT_ROOT,
+                                'assets', 'music', 'mario.mp3'))
+        self.MISS_SOUND = pygame.mixer.Sound(os.path.join(self.SAMPLE_ROOT, 'boo.wav'))
         for path in paths:
             note = int(path.name.split('.')[0])
             sound = pygame.mixer.Sound(path.path)
             self.MIDI_TO_SAMPLE[note] = sound
         self.remap(list(range(64)))  # todo: maybe do a better mapping here
 
+    def play_backing_track(self):
+        pygame.mixer.music.play()
+
     def play_note(self, pad_index):
         note = self.PAD_TO_MIDI[pad_index]
-        sound = self.MIDI_TO_SAMPLE.get(note)
+        sound = self.MIDI_TO_SAMPLE.get(note, self.MISS_SOUND)
         if sound:
             sound.play()
 
