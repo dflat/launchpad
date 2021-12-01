@@ -64,7 +64,7 @@ def flip_frame_for_display(frame):
     return flipped
 
 class PlayMonitor: # todo: unused so far, breakaway class for PlayTrack playback
-    def __init__(self, playtrack, rate=1, autoplay=False)
+    def __init__(self, playtrack, rate=1, autoplay=False):
         self.playtrack = playtrack
         self.rate = rate
         self.autoplay = autoplay
@@ -81,6 +81,7 @@ class PlayTrack:
         self.ticks_per_beat = ticks_per_beat
         self.segment_ticks = segment_ticks
         self._prepare_play_track()
+        self._input_q = self.painter.sampler.input_q
 
     @property
     def seconds_per_segment(self):
@@ -117,16 +118,15 @@ class PlayTrack:
             recolored.append(base_color + row//2)
         return recolored         
 
+    def _clear_queue(self):
+        while not self._input_q.empty():
+            self._input_q.get()
+
     def _input_listener(self):
-        total_frames = len(self.frames)
-        q = self.painter.sampler.input_q
-        while not q.empty(): # clear queue
-            q.get()
-        t0 = self.t0
+        self._clear_queue()
         current_frame_no = -1
         next_frame_no = 0
-        hit_or_miss_log = {i:None for i in range(total_frames)}
-        self.hit_or_miss_log = hit_or_miss_log
+        hit_or_miss_log = {i:None for i in range(self.n_frames)}
         def get_expected_times():
             t = 0
             times = []
@@ -180,11 +180,10 @@ class PlayTrack:
                     
         notes_in_current_frame = { }
         notes_in_next_frame = { }
-        print('total frames:', total_frames)
         while True:
-            got = q.get()
+            got = self._input_q.get()
             if got['type'] == 'hit':
-                hit_time = got['time'] - t0
+                hit_time = got['time'] - self.start_time
                 pad_index = got['pad_index']
                 hit_data = check_for_hit(pad_index, hit_time,current_frame_no,
                                                             next_frame_no)
@@ -214,7 +213,7 @@ class PlayTrack:
                 # todo: account for if frame was already early hit during last frame
                 # by checking hit or miss log
                 current_frame_no += 1
-                next_frame_no = min(total_frames-1, current_frame_no + 1)
+                next_frame_no = min(self.n_frames-1, current_frame_no + 1)
                 if current_frame_no > 0:
                     if hit_or_miss_log[current_frame_no-1] is None:
                         # check if previous frame was a miss and mark it as such if so.
@@ -228,8 +227,7 @@ class PlayTrack:
                 notes_in_next_frame = {i:False for i in next_strike_row if i > 0}
             elif got['type'] == 'exit':
                 break
-
-        print('stopped listening for ddr input')
+        print('ddr playtrack stopped listening')
 
     def _listen_for_input(self):
         t = threading.Thread(target=self._input_listener, args=())
@@ -248,18 +246,19 @@ class PlayTrack:
             self.painter.sampler._load_backing_track(backing_track)
 
         print(self._ticks_to_seconds(sum(self.timing_track)))
-        self.t0 = time.time()
-        input_q = self.painter.sampler.input_q
+        self.start_time = time.time()
         self._listen_for_input()
         input_time = 0
         actual_sleep = 0
         new_frame_signal = {'type': 'frame_started'}
-        exit_signal = {'type': 'exit'}
+        self._stop = threading.Event()
         for i in range(len(self.frames)):
-            input_q.put(new_frame_signal)
+            if self._stop.is_set():
+                print('playback stopped early.')
+                return
+            self._input_q.put(new_frame_signal)
             if i == self.INTRO_PAD_FRAMES and backing_track:
                 self.painter.sampler.play_backing_track()
-            # todo: give a pre-frame lead grace period to allow early hits
             input_time += self.timing_track[i] / rate
 
             self.painter.remap_sampler(self.frames[i])
@@ -268,22 +267,34 @@ class PlayTrack:
                 for j in range(56, 64):
                     if self.frames[i][j] > 0:
                         self.painter.sampler.play_note(j)
-            playback_time = time.time() - self.t0
+            playback_time = time.time() - self.start_time
             duration_to_next_frame = self._ticks_to_seconds(input_time) - playback_time
             if duration_to_next_frame > 0.0:
                 actual_sleep += duration_to_next_frame
                 time.sleep(duration_to_next_frame)
-        t1 = time.time()
-        elapsed = t1 - self.t0
-        input_q.put(exit_signal)
+        self.end_time = time.time()
+        self.stop_listening()
+        self.show_diagnostics(actual_sleep, input_time)
+        self.display_score(hit_or_miss_log)
+
+    def stop_listening(self):
+        self._stop.set()
+        self._input_q.put({'type': 'exit'})
+
+    def show_diagnostics(self, actual_sleep, input_time):
+        elapsed = self.end_time - self.start_time
         print(f'midi track finished in {elapsed:.2f} seconds.')
         print(f'actual_sleep: {actual_sleep:.2f}')
         print(f'input_time: {self._ticks_to_seconds(input_time):.2f}')
-        results = list(self.hit_or_miss_log.values())
+
+    def display_score(self, hit_or_miss_log):
+        results = list(hit_or_miss_log.values())
         hits = sum(1 for i in results if i)
         misses = sum(1 for i in results if i == False)
         blanks = sum(1 for i in results if i == None)
-        print(f'hits:{hits}, misses:{misses}, blanks:{blanks}, frames:{hits+misses+blanks}')
+        print(f'hits:{hits}, misses:{misses}, blanks:{blanks}')
+        print(f'frames:{hits+misses+blanks}')
+        
 
     def _prepare_play_track(self, re_segment=True):
         self.midi_file = mido.MidiFile(self.midi_path)
@@ -295,6 +306,7 @@ class PlayTrack:
             self._re_segment(swing=1)
         self.play_track = build_play_track(self.segments, self.note_set, cols=3)
         self.frames = self._build_frames(self.play_track)
+        self.n_frames = len(self.frames)
         self.colored_frames = self._recolor_frames()
         #self.colored_frames = [self._recolor_frame(f) for f in self.frames]
 

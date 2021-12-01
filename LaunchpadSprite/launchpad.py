@@ -295,8 +295,8 @@ class Painter:
 
 
     def play_ddr_minigame(self, midi_file_path, rate=1, autoplay=False):
-        play_track = ddr.PlayTrack(midi_file_path, painter=self)
-        t = threading.Thread(target=play_track.animate, args=(rate, autoplay))
+        self.play_track = ddr.PlayTrack(midi_file_path, painter=self)
+        t = threading.Thread(target=self.play_track.animate, args=(rate, autoplay))
         t.start()
         print('playing ddr minigame...')
         
@@ -361,7 +361,7 @@ class Painter:
             if self.msg.type == 'clock':
                 continue
             self.state.action(self.msg)
-        print('stopped listening.')
+        print('painter stopped listening.')
         self.listen_remote.clear()
 
     def run(self):

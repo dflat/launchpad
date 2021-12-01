@@ -437,6 +437,10 @@ def update(dt):
           pygame.quit() # Opposite of pygame.init
           game.painter.stop()
           Box.ping_device()
+          try:
+              game.painter.play_track.stop_listening()
+          except AttributeError:
+              pass
           print('bye.')
           sys.exit() # Not including this line crashes the script on Windows. Possibly
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
