@@ -63,6 +63,12 @@ def flip_frame_for_display(frame):
         flipped.extend(row)
     return flipped
 
+class PlayMonitor: # todo: unused so far, breakaway class for PlayTrack playback
+    def __init__(self, playtrack, rate=1, autoplay=False)
+        self.playtrack = playtrack
+        self.rate = rate
+        self.autoplay = autoplay
+
 class PlayTrack:
     FRAME_RECOLOR_MAP = {-1: 3, -2: 0,  0: 8, 1: 32, 2: 12, 3: 44,
                             4: 4, 5: 24, 6:47, 7:56 }
@@ -73,11 +79,8 @@ class PlayTrack:
         self.painter = painter
         self.bpm = bpm
         self.ticks_per_beat = ticks_per_beat
-        #self.seconds_per_beat = 60/bpm
-        #self.bpm_ticks = int(self.seconds_per_beat*10**5)
         self.segment_ticks = segment_ticks
         self._prepare_play_track()
-        self._running = False
 
     @property
     def seconds_per_segment(self):
@@ -96,25 +99,29 @@ class PlayTrack:
     def _recolor_frame(self, frame, frame_no):
         recolored = []
         for i in range(len(frame)):
-            blank = True
+            blank = False
             if frame[i] == -1:
                 map_index = -1
             elif frame[i] == 0:
                 map_index = -2
+                blank = True
             else:
                 map_index = i % 8 # column index
-                blank = False
             base_color = self.FRAME_RECOLOR_MAP[map_index]
             if not blank and False: # todo: this is a test auto-false here..
                 row = (i // 8)    # brighten based on row 
             else:
                 row = 0
+            if map_index == -1 and i//8 == 7: # color bottom row walls green
+                base_color = 30
             recolored.append(base_color + row//2)
         return recolored         
 
     def _input_listener(self):
         total_frames = len(self.frames)
         q = self.painter.sampler.input_q
+        while not q.empty(): # clear queue
+            q.get()
         t0 = self.t0
         current_frame_no = -1
         next_frame_no = 0
@@ -174,7 +181,7 @@ class PlayTrack:
         notes_in_current_frame = { }
         notes_in_next_frame = { }
         print('total frames:', total_frames)
-        while self._running:
+        while True:
             got = q.get()
             if got['type'] == 'hit':
                 hit_time = got['time'] - t0
@@ -182,6 +189,8 @@ class PlayTrack:
                 hit_data = check_for_hit(pad_index, hit_time,current_frame_no,
                                                             next_frame_no)
                 if not hit_data:
+                    self.painter.sampler.play_midi_note(-1) # make sound
+                    print('MISS!')
                     continue
                 cur_or_next, note_hit, diff = hit_data
                 if cur_or_next == 'current':
@@ -217,6 +226,8 @@ class PlayTrack:
                 notes_in_current_frame = {i:False for i in current_strike_row if i > 0}
                 next_strike_row = self.frames[next_frame_no][56:]
                 notes_in_next_frame = {i:False for i in next_strike_row if i > 0}
+            elif got['type'] == 'exit':
+                break
 
         print('stopped listening for ddr input')
 
@@ -239,11 +250,11 @@ class PlayTrack:
         print(self._ticks_to_seconds(sum(self.timing_track)))
         self.t0 = time.time()
         input_q = self.painter.sampler.input_q
-        self._running = True
         self._listen_for_input()
         input_time = 0
         actual_sleep = 0
         new_frame_signal = {'type': 'frame_started'}
+        exit_signal = {'type': 'exit'}
         for i in range(len(self.frames)):
             input_q.put(new_frame_signal)
             if i == self.INTRO_PAD_FRAMES and backing_track:
@@ -264,7 +275,7 @@ class PlayTrack:
                 time.sleep(duration_to_next_frame)
         t1 = time.time()
         elapsed = t1 - self.t0
-        self._running = False
+        input_q.put(exit_signal)
         print(f'midi track finished in {elapsed:.2f} seconds.')
         print(f'actual_sleep: {actual_sleep:.2f}')
         print(f'input_time: {self._ticks_to_seconds(input_time):.2f}')
