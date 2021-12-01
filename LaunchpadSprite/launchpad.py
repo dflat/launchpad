@@ -1,11 +1,13 @@
 import mido
 import re
 import threading
+import queue
 import pickle
 import uuid
 import copy
 import pygame
 import os
+import time
 from . import fonts
 from . import ddr
 from . import config
@@ -163,7 +165,7 @@ class State_Canvas(State):
     def to_ddr(self):
         self.painter.play_ddr_minigame('mario_theme.mid', rate=0.5, autoplay=False)
     def to_ddr_auto(self):
-        self.painter.play_ddr_minigame('mario_theme.mid', rate=0.5, autoplay=True)
+        self.painter.play_ddr_minigame('mario_theme.mid', rate=1, autoplay=True)
     def no_action(self):
         pass
 
@@ -208,6 +210,7 @@ class Sampler:
         pygame.mixer.init()
         pygame.mixer.set_num_channels(32)
         self.load_samples(sample_dir)
+        self.input_q = queue.Queue()
 
     def _load_backing_track(self, fname='mario.mp3'):
         pygame.mixer.music.load(os.path.join(config.PROJECT_ROOT,
@@ -225,11 +228,19 @@ class Sampler:
     def play_backing_track(self):
         pygame.mixer.music.play()
 
-    def play_note(self, pad_index):
-        note = self.PAD_TO_MIDI[pad_index]
+    def play_midi_note(self, note):
         sound = self.MIDI_TO_SAMPLE.get(note, self.MISS_SOUND)
         if sound:
             sound.play()
+
+    def play_note(self, pad_index):
+        t = time.time()
+        self.input_q.put({'type':'hit', 'pad_index': pad_index,
+                            'time': t})
+        #note = self.PAD_TO_MIDI[pad_index]
+        #sound = self.MIDI_TO_SAMPLE.get(note, self.MISS_SOUND)
+        #if sound:
+        #    sound.play()
 
     def remap(self, notes):
         for i in range(len(notes)):

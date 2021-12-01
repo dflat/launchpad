@@ -3,6 +3,8 @@ import mido
 from copy import deepcopy
 import os
 import time
+import threading
+import queue
 from . import config
 
 MIDI_DIR = 'assets/midi'
@@ -71,10 +73,11 @@ class PlayTrack:
         self.painter = painter
         self.bpm = bpm
         self.ticks_per_beat = ticks_per_beat
-        self.seconds_per_beat = 60/bpm
-        self.bpm_ticks = int(self.seconds_per_beat*10**5)
+        #self.seconds_per_beat = 60/bpm
+        #self.bpm_ticks = int(self.seconds_per_beat*10**5)
         self.segment_ticks = segment_ticks
         self._prepare_play_track()
+        self._running = False
 
     @property
     def seconds_per_segment(self):
@@ -102,30 +105,147 @@ class PlayTrack:
                 map_index = i % 8 # column index
                 blank = False
             base_color = self.FRAME_RECOLOR_MAP[map_index]
-            if not blank:
+            if not blank and False: # todo: this is a test auto-false here..
                 row = (i // 8)    # brighten based on row 
             else:
                 row = 0
             recolored.append(base_color + row//2)
         return recolored         
 
+    def _input_listener(self):
+        total_frames = len(self.frames)
+        q = self.painter.sampler.input_q
+        t0 = self.t0
+        current_frame_no = -1
+        next_frame_no = 0
+        hit_or_miss_log = {i:None for i in range(total_frames)}
+        self.hit_or_miss_log = hit_or_miss_log
+        def get_expected_times():
+            t = 0
+            times = []
+            for note_time in self.timing_track:
+                times.append(t)
+                t += self._ticks_to_seconds(note_time) / self.rate
+            return times
+        expected_times = get_expected_times()
+
+        def check_for_hit(pad_index, hit_time, current_frame_no, next_frame_no):
+            thresh = self._ticks_to_seconds(self.segment_ticks*2) / self.rate
+
+            expected_time = expected_times[current_frame_no]
+            next_expected_time = expected_times[next_frame_no]
+            
+            print(f'thresh percent = {thresh/(next_expected_time-expected_time):.2f}')
+
+            # todo: should there be a late allowance? or just early..?
+            diff = hit_time - expected_time # todo: use this to grade accuracy
+
+            # first time check.
+            check_for_leading_hit = False
+            if hit_time < next_expected_time:
+                # check for hit within current frame
+                if hit_or_miss_log[current_frame_no] is None:
+                    # current frame has not been hit yet
+                    # maybe its a blank and this is a leading hit 
+                    if hit_time > (next_expected_time - thresh):
+                        check_for_leading_hit = True
+                    # or, maybe this is a first well-timed hit
+                    # check if correct columns were hit...
+                    hit_pad_note = self.frames[current_frame_no][pad_index] 
+                    if pad_index >= 56 and hit_pad_note > 0:
+                        # make sure pad hit was in bottom row
+                        # and that it was not a blank
+                        return 'current', hit_pad_note, diff 
+                else:
+                    check_for_leading_hit = True
+
+                if check_for_leading_hit:
+                    # current frame has already been hit (or blank frame leading?)
+                    # maybe its a leading hit of the next frame
+                    if hit_time > (next_expected_time - thresh):
+                        hit_pad_note = self.frames[next_frame_no][pad_index]
+                        #print('check for early hit:', next_strike_row)
+                        if pad_index >= 56 and hit_pad_note > 0:
+                            # make sure pad hit was in bottom row
+                            # and that it was not a blank
+                            return 'next', hit_pad_note, diff 
+            
+                    
+        notes_in_current_frame = { }
+        notes_in_next_frame = { }
+        print('total frames:', total_frames)
+        while self._running:
+            got = q.get()
+            if got['type'] == 'hit':
+                hit_time = got['time'] - t0
+                pad_index = got['pad_index']
+                hit_data = check_for_hit(pad_index, hit_time,current_frame_no,
+                                                            next_frame_no)
+                if not hit_data:
+                    continue
+                cur_or_next, note_hit, diff = hit_data
+                if cur_or_next == 'current':
+                    print(f'got a current hit...{diff:.2f} [{note_hit}]')
+                    # check if already got a hit early last frame
+                    if hit_or_miss_log[current_frame_no]:
+                        print('already hit last frame')
+                        continue 
+                    else:
+                        notes_in_current_frame[note_hit] = True
+                        self.painter.sampler.play_midi_note(note_hit) # make sound
+                        if all(notes_in_current_frame.values()): # whole chord/note hit 
+                            hit_or_miss_log[current_frame_no] = diff  # log accuracy of hit
+                if cur_or_next == 'next':
+                    print(f'got a leading hit...{diff:.2f} [{note_hit}]')
+                    notes_in_next_frame[note_hit] = True
+                    self.painter.sampler.play_midi_note(note_hit) # make sound
+                    if all(notes_in_next_frame.values()): # whole chord/note hit 
+                        hit_or_miss_log[next_frame_no] = diff  # log accuracy of hit
+            elif got['type'] == 'frame_started':
+                # todo: account for if frame was already early hit during last frame
+                # by checking hit or miss log
+                current_frame_no += 1
+                next_frame_no = min(total_frames-1, current_frame_no + 1)
+                if current_frame_no > 0:
+                    if hit_or_miss_log[current_frame_no-1] is None:
+                        # check if previous frame was a miss and mark it as such if so.
+                        if len(notes_in_current_frame) > 0:
+                            hit_or_miss_log[current_frame_no-1] = False
+                            print('missed frame #', current_frame_no-1)
+                # reset frame variables (current and look ahead [next] frames)
+                current_strike_row = self.frames[current_frame_no][56:]
+                notes_in_current_frame = {i:False for i in current_strike_row if i > 0}
+                next_strike_row = self.frames[next_frame_no][56:]
+                notes_in_next_frame = {i:False for i in next_strike_row if i > 0}
+
+        print('stopped listening for ddr input')
+
+    def _listen_for_input(self):
+        t = threading.Thread(target=self._input_listener, args=())
+        t.start()
+
     def animate(self, rate=1, autoplay=False, remote=None):
-        # todo: drift-correct timing...
+        self.rate = rate
         if rate == 0.5:
             backing_track = 'mario_halftime.mp3'
             self.painter.sampler.load_samples('dyno_sim')
-        elif rate == 1:
-            backing_track = 'mario.mp3'
+        elif rate == 1: 
+            backing_track = 'mario_v2.mp3'
         else:
             backing_track = None
         if backing_track:
             self.painter.sampler._load_backing_track(backing_track)
 
         print(self._ticks_to_seconds(sum(self.timing_track)))
-        t0 = time.time()
+        self.t0 = time.time()
+        input_q = self.painter.sampler.input_q
+        self._running = True
+        self._listen_for_input()
         input_time = 0
         actual_sleep = 0
+        new_frame_signal = {'type': 'frame_started'}
         for i in range(len(self.frames)):
+            input_q.put(new_frame_signal)
             if i == self.INTRO_PAD_FRAMES and backing_track:
                 self.painter.sampler.play_backing_track()
             # todo: give a pre-frame lead grace period to allow early hits
@@ -137,25 +257,22 @@ class PlayTrack:
                 for j in range(56, 64):
                     if self.frames[i][j] > 0:
                         self.painter.sampler.play_note(j)
-            #frame_duration = self._ticks_to_seconds(self.timing_track[i]) / rate
-            #lead_time = .05
-            #frame_delay = frame_duration - lead_time
-            #time.sleep(frame_delay)
-            #try:
-            #    self.painter.remap_sampler(self.frames[i+1])
-            #except IndexError:
-            #    break
-            #time.sleep(lead_time)
-            playback_time = time.time() - t0
+            playback_time = time.time() - self.t0
             duration_to_next_frame = self._ticks_to_seconds(input_time) - playback_time
             if duration_to_next_frame > 0.0:
                 actual_sleep += duration_to_next_frame
                 time.sleep(duration_to_next_frame)
         t1 = time.time()
-        elapsed = t1 - t0# - 16*self._ticks_to_seconds(120*16)
+        elapsed = t1 - self.t0
+        self._running = False
         print(f'midi track finished in {elapsed:.2f} seconds.')
         print(f'actual_sleep: {actual_sleep:.2f}')
         print(f'input_time: {self._ticks_to_seconds(input_time):.2f}')
+        results = list(self.hit_or_miss_log.values())
+        hits = sum(1 for i in results if i)
+        misses = sum(1 for i in results if i == False)
+        blanks = sum(1 for i in results if i == None)
+        print(f'hits:{hits}, misses:{misses}, blanks:{blanks}, frames:{hits+misses+blanks}')
 
     def _prepare_play_track(self, re_segment=True):
         self.midi_file = mido.MidiFile(self.midi_path)
@@ -164,7 +281,7 @@ class PlayTrack:
         self.note_set = set(m.note for m in self.midi_track if isinstance(m, mido.Message)
                         and m.type == 'note_on')
         if re_segment:
-            self._re_segment()
+            self._re_segment(swing=1)
         self.play_track = build_play_track(self.segments, self.note_set, cols=3)
         self.frames = self._build_frames(self.play_track)
         self.colored_frames = self._recolor_frames()
@@ -179,7 +296,7 @@ class PlayTrack:
             frames.append(flipped)
         return frames
 
-    def _re_segment(self, seg_ticks=40):
+    def _re_segment(self, seg_ticks=40, swing=1):
         # introduce variable timing to the playtrack
         # e.g. handle triplets w/different speed than straight-divisions
         segs_per_quarter_note = 12
@@ -187,6 +304,13 @@ class PlayTrack:
         new_segments = []
         for _ in range(self.INTRO_PAD_FRAMES): # intro pad timing
             timing_track.append(seg_ticks*3)
+        def get_swing_ratio(ticks_per_q, ratio):
+            assert(ratio >= 1)
+            semi = ticks_per_q / 2
+            short = semi/ratio
+            taken = semi - short
+            long = semi + taken
+            return round(short), round(long)
         def divide_into_three(quarter_note):
             divisions = quarter_note[::4]
             for triplet_hit in divisions:
@@ -194,9 +318,12 @@ class PlayTrack:
                 timing_track.append(seg_ticks*4)
         def divide_into_four(quarter_note):
             divisions = quarter_note[::3]
-            for sixteenth_hit in divisions:
+            swing_short, swing_long = get_swing_ratio(480, swing)
+            for i, sixteenth_hit in enumerate(divisions):
+                eighth_ticks = swing_long if i < 2 else swing_short
                 new_segments.append(sixteenth_hit)
-                timing_track.append(seg_ticks*3)
+                #timing_track.append(seg_ticks*3)
+                timing_track.append(round(eighth_ticks/2))
         strikes = { 'triplet': (1,0,0,0,1,0,0,0,1,0,0,0) }
         # check a quarter note at a time, check for triplet spacing
         for i in range(0, len(self.segments), segs_per_quarter_note):
