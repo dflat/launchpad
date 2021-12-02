@@ -137,6 +137,7 @@ class State_DDR(State):
                     self.to_canvas()
 
     def to_canvas(self):
+        self.painter.play_track.stop_listening()
         self.painter.switch_to_canvas() # todo: set up a thread remote for ddr feed
         self.new_state(State_Canvas)
 
@@ -227,6 +228,9 @@ class Sampler:
 
     def play_backing_track(self):
         pygame.mixer.music.play()
+
+    def stop_backing_track(self):
+        pygame.mixer.music.fadeout(500)
 
     def play_midi_note(self, note):
         sound = self.MIDI_TO_SAMPLE.get(note, self.MISS_SOUND)
