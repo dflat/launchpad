@@ -127,6 +127,7 @@ class PlayTrack:
         current_frame_no = -1
         next_frame_no = 0
         hit_or_miss_log = {i:None for i in range(self.n_frames)}
+        self.hit_or_miss_log = hit_or_miss_log
         def get_expected_times():
             t = 0
             times = []
@@ -233,6 +234,12 @@ class PlayTrack:
         t = threading.Thread(target=self._input_listener, args=())
         t.start()
 
+    def test_player(self):
+        def play():
+            pass
+        t = threading.Thread(target=play, args=())
+        t.start()
+
     def animate(self, rate=1, autoplay=False, remote=None):
         self.rate = rate
         if rate == 0.5:
@@ -266,7 +273,11 @@ class PlayTrack:
             if autoplay:
                 for j in range(56, 64):
                     if self.frames[i][j] > 0:
-                        self.painter.sampler.play_note(j)
+                        delay = random.random()
+                        delay = 0*delay
+                        t = threading.Timer(delay, self.painter.sampler.play_note,
+                                            args=(j,))
+                        t.start()
             playback_time = time.time() - self.start_time
             duration_to_next_frame = self._ticks_to_seconds(input_time) - playback_time
             if duration_to_next_frame > 0.0:
@@ -275,10 +286,11 @@ class PlayTrack:
         self.end_time = time.time()
         self.stop_listening()
         self.show_diagnostics(actual_sleep, input_time)
-        self.display_score(hit_or_miss_log)
+        self.display_score(self.hit_or_miss_log)
 
     def stop_listening(self):
         self._stop.set()
+        self.painter.sampler.stop_backing_track()
         self._input_q.put({'type': 'exit'})
 
     def show_diagnostics(self, actual_sleep, input_time):
@@ -288,6 +300,13 @@ class PlayTrack:
         print(f'input_time: {self._ticks_to_seconds(input_time):.2f}')
 
     def display_score(self, hit_or_miss_log):
+        for frame, accuracy in hit_or_miss_log.items():
+            if accuracy is None:
+                continue
+            elif accuracy is False:
+                print(f'{frame:<4}: miss')
+            else:    
+                print(f'{frame:<4}: {accuracy:.2f}')
         results = list(hit_or_miss_log.values())
         hits = sum(1 for i in results if i)
         misses = sum(1 for i in results if i == False)
