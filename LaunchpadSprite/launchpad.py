@@ -230,7 +230,10 @@ class Sampler:
         pygame.mixer.music.play()
 
     def stop_backing_track(self):
-        pygame.mixer.music.fadeout(500)
+        try:
+            pygame.mixer.music.fadeout(500)
+        except pygame.error:
+            pass
 
     def play_midi_note(self, note):
         sound = self.MIDI_TO_SAMPLE.get(note, self.MISS_SOUND)
