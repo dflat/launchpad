@@ -9,41 +9,6 @@ from . import config
 
 MIDI_DIR = 'assets/midi'
 MIDI_DIR_PATH = os.path.join(config.PROJECT_ROOT, MIDI_DIR)
-
-def build_play_track(segments, note_set, cols):
-    # todo: make playtrack entries into objects instead of
-    #      plain ints, to store extra metadata (e.g is_triplet, color)
-    def build_display_row(track_row):
-        display_row = [-1]*8 # fix a blank color e.g. -1 
-        n = len(track_row)
-        start = (8-n)//2
-        display_row[start:start+n] = track_row 
-        return display_row
-    def build_note_map(note_set):
-        note_map = { }
-        for i, note in enumerate(sorted(note_set)):
-            note_map[note] = i % cols
-        return note_map
-    note_map = build_note_map(note_set)
-    track = []
-    for _ in range(8):        # intro padding
-        track.extend(build_display_row([0]*cols))
-    for segment in segments:
-        track_row = [0]*cols
-        for i, msg in enumerate(segment):
-            index = note_map[msg.note] 
-            got = track_row[index]
-            if got == 0:         # first (or only) note in chord
-                track_row[index] = msg.note
-            else:                # handle chord placement
-                index = index + random.randint(1, cols-1)
-                track_row[index % cols] = msg.note
-        track_row = build_display_row(track_row)
-        track.extend(track_row)
-    for _ in range(8):        # outro padding
-        track.extend(build_display_row([0]*cols))
-    return track
-
 def playback(segs, port, seg_secs=(40/480)*(60/120)):
     for seg in segs:
         for msg in seg:
@@ -80,7 +45,7 @@ class PlayTrack:
         self.bpm = bpm
         self.ticks_per_beat = ticks_per_beat
         self.segment_ticks = segment_ticks
-        self._prepare_play_track()
+        self._prepare_play_track(cols=3)
         self._input_q = self.painter.sampler.input_q
 
     @property
@@ -315,19 +280,53 @@ class PlayTrack:
         print(f'frames:{hits+misses+blanks}')
         
 
-    def _prepare_play_track(self, re_segment=True):
+    def _build_note_map(self, note_set, cols):
+        self.note_map = { }
+        for i, note in enumerate(sorted(self.note_set)):
+            self.note_map[note] = i % cols
+
+    def _prepare_play_track(self, re_segment=True, cols=3):
         self.midi_file = mido.MidiFile(self.midi_path)
         self.midi_track = self.midi_file.tracks[0]
         self.segments = midi_segmenter(self.midi_track)
-        self.note_set = set(m.note for m in self.midi_track if isinstance(m, mido.Message)
-                        and m.type == 'note_on')
         if re_segment:
             self._re_segment(swing=1)
-        self.play_track = build_play_track(self.segments, self.note_set, cols=3)
+        self.note_set = set(m.note for m in self.midi_track if isinstance(m, mido.Message)
+                        and m.type == 'note_on')
+        self._build_note_map(self.note_set, cols)
+        self.play_track = self._build_play_track(self.segments, self.note_set, cols)
         self.frames = self._build_frames(self.play_track)
         self.n_frames = len(self.frames)
         self.colored_frames = self._recolor_frames()
         #self.colored_frames = [self._recolor_frame(f) for f in self.frames]
+
+    def _build_play_track(self, segments, note_set, cols):
+        # todo: make playtrack entries into objects instead of
+        #      plain ints, to store extra metadata (e.g is_triplet, color)
+        def build_display_row(track_row):
+            display_row = [-1]*8 # fix a blank color e.g. -1 
+            n = len(track_row)
+            start = (8-n)//2
+            display_row[start:start+n] = track_row 
+            return display_row
+        track = []
+        for _ in range(8):        # intro padding
+            track.extend(build_display_row([0]*cols))
+        for segment in segments:
+            track_row = [0]*cols
+            for i, msg in enumerate(segment):
+                index = self.note_map[msg.note] 
+                got = track_row[index]
+                if got == 0:         # first (or only) note in chord
+                    track_row[index] = msg.note
+                else:                # handle chord placement
+                    index = index + random.randint(1, cols-1)
+                    track_row[index % cols] = msg.note
+            track_row = build_display_row(track_row)
+            track.extend(track_row)
+        for _ in range(8):        # outro padding
+            track.extend(build_display_row([0]*cols))
+        return track
 
     def _build_frames(self, play_track):
         n = len(play_track)//8 - 8
