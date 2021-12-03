@@ -274,7 +274,7 @@ class PlayTrack:
             backing_track = 'mario_halftime.mp3'
             self.painter.sampler.load_samples('dyno_sim')
         elif rate == 1: 
-            backing_track = 'mario_v2.mp3'
+            backing_track = 'mario_90bpm.mp3'
         else:
             backing_track = None
         if backing_track:

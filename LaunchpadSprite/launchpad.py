@@ -164,9 +164,9 @@ class State_Canvas(State):
     def marquee(self):
         self.painter.scroll_text('See you in hell?', fps=20)
     def to_ddr(self):
-        self.painter.play_ddr_minigame('mario_theme.mid', rate=1, autoplay=False)
+        self.painter.play_ddr_minigame('mario_theme.mid', bpm=90, rate=1, autoplay=False)
     def to_ddr_auto(self):
-        self.painter.play_ddr_minigame('mario_theme.mid', rate=1, autoplay=True)
+        self.painter.play_ddr_minigame('mario_theme.mid', bpm=90, rate=1, autoplay=True)
     def no_action(self):
         pass
 
@@ -301,8 +301,8 @@ class Painter:
         self.sampler.remap(notes)
 
 
-    def play_ddr_minigame(self, midi_file_path, rate=1, autoplay=False):
-        self.play_track = ddr.PlayTrack(midi_file_path, painter=self)
+    def play_ddr_minigame(self, midi_file_path, rate=1, bpm=120, autoplay=False):
+        self.play_track = ddr.PlayTrack(midi_file_path, bpm=bpm, painter=self)
         t = threading.Thread(target=self.play_track.animate, args=(rate, autoplay))
         t.start()
         print('playing ddr minigame...')
