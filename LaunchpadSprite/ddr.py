@@ -34,8 +34,58 @@ class PlayMonitor: # todo: unused so far, breakaway class for PlayTrack playback
         self.rate = rate
         self.autoplay = autoplay
 
+class TimingTrack: # unused for now, just using a default list atm...
+    def __init__(self):
+        self.items = []
+    def __len__(self):
+        return len(self.items)
+    def __getitem__(self, index):
+        return self.items[index]
+
+class TimingFrame:
+    def __init__(self, duration, measure, beat, sub_beat=0, is_triplet=False):
+        self.duration = duration
+        self.measure = measure
+        self.beat = beat
+        self.is_triplet = is_triplet
+        self.sub_beat = sub_beat
+
+class TrackFrame:
+    def __init__(self, items:'List[TrackItem]'):
+        self.items = items
+    def __len__(self):
+        return len(self.items)
+    def __getitem__(self, index):
+        return self.items[index]
+    def __getattr__(self, name):
+        if hasattr(self.items, name):
+            return getattr(self.items, name)
+        else:
+            raise AttributeError(name)
+
+class TrackItem:
+    __slots__ = ('note','beat','color','is_triplet','is_blank','is_wall')
+    def __init__(self, note=None, beat=None, color=None,
+                    is_triplet=False, is_blank=False, is_wall=False):
+        self.note = note
+        self.beat = beat
+        self.color = color
+        self.is_triplet = is_triplet
+        self.is_blank = is_blank
+        self.is_wall = is_wall
+        #self._assign_color()
+    def _assign_color(self):
+        assert(self.note or self.is_blank or self.is_wall)
+        if self.is_blank:
+            self.color = 0
+        elif self.is_wall:
+            self.color = -1
+        else:
+            self.color = None # will be assigned by column in _recolor_frame
+            #self.FRAME_RECOLOR_MAP[self.note] 
+
 class PlayTrack:
-    FRAME_RECOLOR_MAP = {-1: 3, -2: 0,  0: 8, 1: 32, 2: 12, 3: 44,
+    FRAME_RECOLOR_MAP = {-1: 3, -2: 0, -3:59, 0: 8, 1: 32, 2: 12, 3: 44,
                             4: 4, 5: 24, 6:47, 7:56 }
     INTRO_PAD_FRAMES = 8
     OUTRO_PAD_FRAMES = 8
@@ -56,32 +106,37 @@ class PlayTrack:
         return (ticks/self.ticks_per_beat)*(60/self.bpm)
 
     def _recolor_frames(self):
-        recolored_frames = []
         for i in range(len(self.frames)):
-            recolored = self._recolor_frame(self.frames[i], i)
-            recolored_frames.append(recolored)
-        return recolored_frames
+            self._recolor_frame(self.frames[i])
 
-    def _recolor_frame(self, frame, frame_no):
-        recolored = []
+    def _recolor_frame(self, frame:'List[TrackItem]', bonus=False):
+        wall_pulse = {0:3, 1:2, 2:2, 3:2}
+        hit_row_pulse = {0:30, 1:31, 2:30, 3:31}
+        bonus_pulse = {0:32, 1:40, 2:48, 3:56}
         for i in range(len(frame)):
-            blank = False
-            if frame[i] == -1:
+            item = frame[i]
+            if item.is_wall:
                 map_index = -1
-            elif frame[i] == 0:
+            elif item.is_blank:
                 map_index = -2
-                blank = True
-            else:
+            elif item.note is not None:
                 map_index = i % 8 # column index
+                if frame.timing.is_triplet:
+                    map_index = -3 
             base_color = self.FRAME_RECOLOR_MAP[map_index]
-            if not blank and False: # todo: this is a test auto-false here..
+            if not item.is_blank and False: # todo: this is a test auto-false here..
                 row = (i // 8)    # brighten based on row 
             else:
                 row = 0
-            if map_index == -1 and i//8 == 7: # color bottom row walls green
-                base_color = 30
-            recolored.append(base_color + row//2)
-        return recolored         
+            if item.is_wall:
+                if not bonus:
+                    base_color = 0 + wall_pulse[frame.timing.beat]
+                elif bonus:
+                    base_color = bonus_pulse[frame.timing.beat] + frame.timing.sub_beat
+                if i//8 == 7: # color bottom row walls green
+                    base_color = hit_row_pulse[frame.timing.beat]
+            item.color = base_color + row // 2
+
 
     def _clear_queue(self):
         while not self._input_q.empty():
@@ -96,9 +151,9 @@ class PlayTrack:
         def get_expected_times():
             t = 0
             times = []
-            for note_time in self.timing_track:
+            for note_duration in (i.duration for i in self.timing_track):
                 times.append(t)
-                t += self._ticks_to_seconds(note_time) / self.rate
+                t += self._ticks_to_seconds(note_duration) / self.rate
             return times
         expected_times = get_expected_times()
 
@@ -124,8 +179,8 @@ class PlayTrack:
                         check_for_leading_hit = True
                     # or, maybe this is a first well-timed hit
                     # check if correct columns were hit...
-                    hit_pad_note = self.frames[current_frame_no][pad_index] 
-                    if pad_index >= 56 and hit_pad_note > 0:
+                    hit_pad_note = self.frames[current_frame_no][pad_index].note
+                    if pad_index >= 56 and hit_pad_note is not None:
                         # make sure pad hit was in bottom row
                         # and that it was not a blank
                         return 'current', hit_pad_note, diff 
@@ -136,9 +191,9 @@ class PlayTrack:
                     # current frame has already been hit (or blank frame leading?)
                     # maybe its a leading hit of the next frame
                     if hit_time > (next_expected_time - thresh):
-                        hit_pad_note = self.frames[next_frame_no][pad_index]
+                        hit_pad_note = self.frames[next_frame_no][pad_index].note
                         #print('check for early hit:', next_strike_row)
-                        if pad_index >= 56 and hit_pad_note > 0:
+                        if pad_index >= 56 and hit_pad_note is not None:
                             # make sure pad hit was in bottom row
                             # and that it was not a blank
                             return 'next', hit_pad_note, diff 
@@ -146,6 +201,7 @@ class PlayTrack:
                     
         notes_in_current_frame = { }
         notes_in_next_frame = { }
+        streak = 0
         while True:
             got = self._input_q.get()
             if got['type'] == 'hit':
@@ -155,9 +211,12 @@ class PlayTrack:
                                                             next_frame_no)
                 if not hit_data:
                     self.painter.sampler.play_midi_note(-1) # make sound
+                    streak = 0
+                    self.bonus = False
                     print('MISS!')
                     continue
                 cur_or_next, note_hit, diff = hit_data
+                streak += 1
                 if cur_or_next == 'current':
                     print(f'got a current hit...{diff:.2f} [{note_hit}]')
                     # check if already got a hit early last frame
@@ -187,12 +246,16 @@ class PlayTrack:
                             hit_or_miss_log[current_frame_no-1] = False
                             print('missed frame #', current_frame_no-1)
                 # reset frame variables (current and look ahead [next] frames)
-                current_strike_row = self.frames[current_frame_no][56:]
+                current_strike_row = [item.note or 0
+                                    for item in self.frames[current_frame_no][56:]]
                 notes_in_current_frame = {i:False for i in current_strike_row if i > 0}
-                next_strike_row = self.frames[next_frame_no][56:]
+                next_strike_row = [item.note or 0
+                                    for item in self.frames[next_frame_no][56:]]
                 notes_in_next_frame = {i:False for i in next_strike_row if i > 0}
             elif got['type'] == 'exit':
                 break
+            if streak > 10:
+                self.bonus = True
         print('ddr playtrack stopped listening')
 
     def _listen_for_input(self):
@@ -217,13 +280,14 @@ class PlayTrack:
         if backing_track:
             self.painter.sampler._load_backing_track(backing_track)
 
-        print(self._ticks_to_seconds(sum(self.timing_track)))
+        print(self._ticks_to_seconds(sum(i.duration for i in self.timing_track)))
         self.start_time = time.time()
         self._listen_for_input()
         input_time = 0
         actual_sleep = 0
         new_frame_signal = {'type': 'frame_started'}
         self._stop = threading.Event()
+        self.bonus = False
         for i in range(len(self.frames)):
             if self._stop.is_set():
                 print('playback stopped early.')
@@ -231,13 +295,17 @@ class PlayTrack:
             self._input_q.put(new_frame_signal)
             if i == self.INTRO_PAD_FRAMES and backing_track:
                 self.painter.sampler.play_backing_track()
-            input_time += self.timing_track[i] / rate
+            input_time += self.timing_track[i].duration / rate
 
-            self.painter.remap_sampler(self.frames[i])
-            self.painter.send_sysex(self.painter.as_page(self.colored_frames[i]))
+            #self.painter.remap_sampler(self.frames[i]) #no need for this now
+            frame = self.frames[i]
+            if self.bonus:
+                self._recolor_frame(frame, bonus=True)
+            colors = [item.color for item in frame]
+            self.painter.send_sysex(self.painter.as_page(colors))
             if autoplay:
                 for j in range(56, 64):
-                    if self.frames[i][j] > 0:
+                    if self.frames[i][j].note is not None:
                         delay = random.random()
                         delay = 0*delay
                         t = threading.Timer(delay, self.painter.sampler.play_note,
@@ -281,6 +349,9 @@ class PlayTrack:
         
 
     def _build_note_map(self, note_set, cols):
+        """ 
+        Maps a midi note value to a column index.
+        """
         self.note_map = { }
         for i, note in enumerate(sorted(self.note_set)):
             self.note_map[note] = i % cols
@@ -297,44 +368,48 @@ class PlayTrack:
         self.play_track = self._build_play_track(self.segments, self.note_set, cols)
         self.frames = self._build_frames(self.play_track)
         self.n_frames = len(self.frames)
-        self.colored_frames = self._recolor_frames()
-        #self.colored_frames = [self._recolor_frame(f) for f in self.frames]
+        self._recolor_frames()
 
     def _build_play_track(self, segments, note_set, cols):
         # todo: make playtrack entries into objects instead of
         #      plain ints, to store extra metadata (e.g is_triplet, color)
         def build_display_row(track_row):
-            display_row = [-1]*8 # fix a blank color e.g. -1 
+            display_row = [TrackItem(is_wall=True) for _ in range(8)] # fix a blank color 
             n = len(track_row)
             start = (8-n)//2
             display_row[start:start+n] = track_row 
             return display_row
         track = []
         for _ in range(8):        # intro padding
-            track.extend(build_display_row([0]*cols))
+            track.extend(build_display_row([TrackItem(is_blank=True) 
+                                            for _ in range(cols)]))
         for segment in segments:
-            track_row = [0]*cols
+            track_row = [TrackItem(is_blank=True) for _ in range(cols)]
             for i, msg in enumerate(segment):
                 index = self.note_map[msg.note] 
-                got = track_row[index]
-                if got == 0:         # first (or only) note in chord
-                    track_row[index] = msg.note
-                else:                # handle chord placement
+                item = track_row[index]
+                if item.is_blank:         # first (or only) note in chord
+                    track_row[index] = TrackItem(note=msg.note)
+                else:       # handle chord placement for column assignment collision
                     index = index + random.randint(1, cols-1)
-                    track_row[index % cols] = msg.note
+                    track_row[index % cols] = TrackItem(note=msg.note)
             track_row = build_display_row(track_row)
             track.extend(track_row)
         for _ in range(8):        # outro padding
-            track.extend(build_display_row([0]*cols))
+            track.extend(build_display_row([TrackItem(is_blank=True)
+                                            for _ in range(cols)]))
         return track
 
     def _build_frames(self, play_track):
         n = len(play_track)//8 - 8
         frames = []
+        print('timing frames:', len(self.timing_track), 'frames:', n)
         for i in range(n):
             frame = get_window(play_track, offset=i)
             flipped = flip_frame_for_display(frame)
-            frames.append(flipped)
+            track_frame = TrackFrame([deepcopy(item) for item in flipped])
+            track_frame.timing = self.timing_track[i]
+            frames.append(track_frame)
         return frames
 
     def _re_segment(self, seg_ticks=40, swing=1):
@@ -343,8 +418,13 @@ class PlayTrack:
         segs_per_quarter_note = 12
         timing_track = []
         new_segments = []
-        for _ in range(self.INTRO_PAD_FRAMES): # intro pad timing
-            timing_track.append(seg_ticks*3)
+        for i in range(self.INTRO_PAD_FRAMES): # intro pad timing
+            measure = -1
+            beat = i // 4
+            #measure = i // 16
+            #measure -= self.INTRO_PAD_FRAMES // 16
+            timing_frame = TimingFrame(seg_ticks*3, measure, beat)
+            timing_track.append(timing_frame)
         def get_swing_ratio(ticks_per_q, ratio):
             assert(ratio >= 1)
             semi = ticks_per_q / 2
@@ -352,31 +432,40 @@ class PlayTrack:
             taken = semi - short
             long = semi + taken
             return round(short), round(long)
-        def divide_into_three(quarter_note):
+        def divide_into_three(quarter_note, position):
+            measure, beat = divmod(position, 4)
             divisions = quarter_note[::4]
-            for triplet_hit in divisions:
+            for i, triplet_hit in enumerate(divisions):
                 new_segments.append(triplet_hit)
-                timing_track.append(seg_ticks*4)
-        def divide_into_four(quarter_note):
+                timing_frame = TimingFrame(seg_ticks*4, measure, beat,
+                                            sub_beat=i, is_triplet=True)
+                timing_track.append(timing_frame)
+        def divide_into_four(quarter_note, position):
+            measure, beat = divmod(position, 4)
             divisions = quarter_note[::3]
             swing_short, swing_long = get_swing_ratio(480, swing)
             for i, sixteenth_hit in enumerate(divisions):
                 eighth_ticks = swing_long if i < 2 else swing_short
                 new_segments.append(sixteenth_hit)
-                #timing_track.append(seg_ticks*3)
-                timing_track.append(round(eighth_ticks/2))
+                duration = round(eighth_ticks/2)
+                timing_frame = TimingFrame(duration, measure, beat, sub_beat=i)
+                timing_track.append(timing_frame)
         strikes = { 'triplet': (1,0,0,0,1,0,0,0,1,0,0,0) }
         # check a quarter note at a time, check for triplet spacing
+        beat_count = 0
         for i in range(0, len(self.segments), segs_per_quarter_note):
             quarter_note = self.segments[i:i+segs_per_quarter_note]
             strike_map = tuple(1 if x else 0 for x in quarter_note)
             if strike_map == strikes['triplet']:
-                divide_into_three(quarter_note)
+                divide_into_three(quarter_note, beat_count)
             else:
-                divide_into_four(quarter_note)
-
-        for _ in range(self.OUTRO_PAD_FRAMES): # todo: fix consistency with padding
-            timing_track.append(seg_ticks*3)
+                divide_into_four(quarter_note, beat_count)
+            beat_count += 1
+        for i in range(self.OUTRO_PAD_FRAMES): # todo: fix consistency with padding
+            measure = beat_count + i // 16
+            beat = i // 4
+            timing_frame = TimingFrame(seg_ticks*3, measure, beat)
+            timing_track.append(timing_frame)
         self.timing_track = timing_track
         self.segments = new_segments
 
