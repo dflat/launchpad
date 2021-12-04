@@ -141,6 +141,11 @@ class State_DDR(State):
         self.painter.switch_to_canvas() # todo: set up a thread remote for ddr feed
         self.new_state(State_Canvas)
 
+class State_ChooseDDRSong:
+    # TODO: select from a gui menu the song to be played
+    def to_ddr(self):
+        pass
+
 class State_Canvas(State):
     rule = {State.CTRL['save']: ('State_SavePending', 'no_action'),
             State.CTRL['load']: ('State_LoadPending', 'no_action'),
@@ -150,6 +155,9 @@ class State_Canvas(State):
             State.CTRL['ddr_auto']: ('State_DDR', 'to_ddr_auto'), # TODO: fix state
             }
     def action(self, msg):
+        self.song = 'ddr_test'
+        self.bpm = 120
+        self.sample_dir = 'voice_plucks'
         if self.is_pad_press(msg):
             self.painter.paint()
         elif self.is_cc_press(msg):
@@ -164,9 +172,11 @@ class State_Canvas(State):
     def marquee(self):
         self.painter.scroll_text('See you in hell?', fps=20)
     def to_ddr(self):
-        self.painter.play_ddr_minigame('mario_theme.mid', bpm=90, rate=1, autoplay=False)
+        self.painter.play_ddr_minigame(self.song, bpm=self.bpm,
+                                    rate=1, autoplay=False, sample_dir=self.sample_dir)
     def to_ddr_auto(self):
-        self.painter.play_ddr_minigame('mario_theme.mid', bpm=90, rate=1, autoplay=True)
+        self.painter.play_ddr_minigame(self.song, bpm=self.bpm,
+                                    rate=1, autoplay=True, sample_dir=self.sample_dir)
     def no_action(self):
         pass
 
@@ -206,25 +216,43 @@ class Sampler:
     PAD_TO_MIDI = { } # pad_index -> midi_note
     MIDI_TO_SAMPLE = { } # midi note -> audio file
     SAMPLE_ROOT = os.path.join(config.PROJECT_ROOT, 'assets/samples')
+    SAMPLE_PACKS = { }
 
     def __init__(self, sample_dir):
         pygame.mixer.init()
         pygame.mixer.set_num_channels(32)
+        self.loaded_packs = { }
         self.load_samples(sample_dir)
         self.input_q = queue.Queue()
 
-    def _load_backing_track(self, fname='mario.mp3'):
+    def load_backing_track(self, fname='mario_theme'):
         pygame.mixer.music.load(os.path.join(config.PROJECT_ROOT,
-                                'assets', 'music', fname))
+                                'assets', 'music', fname + '.mp3'))
 
     def load_samples(self, sample_dir):
+        """
+        Load samples from disk into memory.
+        """
         paths = os.scandir(os.path.join(self.SAMPLE_ROOT, sample_dir))
         self.MISS_SOUND = pygame.mixer.Sound(os.path.join(self.SAMPLE_ROOT, 'boo.wav'))
+        sample_pack = { }
         for path in paths:
             note = int(path.name.split('.')[0])
             sound = pygame.mixer.Sound(path.path)
-            self.MIDI_TO_SAMPLE[note] = sound
+            sample_pack[note] = sound
         self.remap(list(range(64)))  # todo: maybe do a better mapping here
+        self.loaded_packs[sample_dir] = sample_pack
+        self.current_sample_pack = sample_dir
+
+    def switch_sample_pack(self, sample_dir):
+        """
+        Switch Sampler to an already loaded sample pack.
+        """
+        sample_pack = self.loaded_packs.get(sample_dir)
+        if sample_pack:
+            self.current_sample_pack = sample_pack
+        else:
+            raise RuntimeError(f'Tried to switch to an unloaded sample pack:{sample_dir}')
 
     def play_backing_track(self):
         pygame.mixer.music.play()
@@ -236,7 +264,8 @@ class Sampler:
             pass
 
     def play_midi_note(self, note):
-        sound = self.MIDI_TO_SAMPLE.get(note, self.MISS_SOUND)
+        sample_pack = self.loaded_packs[self.current_sample_pack]
+        sound = sample_pack.get(note, self.MISS_SOUND)
         if sound:
             sound.play()
 
@@ -301,8 +330,12 @@ class Painter:
         self.sampler.remap(notes)
 
 
-    def play_ddr_minigame(self, midi_file_path, rate=1, bpm=120, autoplay=False):
-        self.play_track = ddr.PlayTrack(midi_file_path, bpm=bpm, painter=self)
+    def play_ddr_minigame(self, song_name, rate=1, bpm=120,
+                            sample_dir=None, autoplay=False):
+        self.play_track = ddr.PlayTrack(song_name + '.mid', bpm=bpm, painter=self)
+        self.sampler.load_backing_track(song_name)
+        if sample_dir:
+            self.sampler.load_samples(sample_dir)
         t = threading.Thread(target=self.play_track.animate, args=(rate, autoplay))
         t.start()
         print('playing ddr minigame...')

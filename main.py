@@ -307,24 +307,23 @@ class Box(pygame.sprite.Sprite):
     @classmethod
     def animate(cls):
         if ui.frame % cls.REFRESH_RATE == 0: 
-            cls.get_wave()
+            colors = cls.get_wave(cls.selected_x, cls.selected_y, t=ui.t)
+            cls.load_page(colors)
 
     @classmethod
-    def get_wave(cls):
+    def get_wave(cls, center_x, center_y, t):
         colors = []
-        t = ui.t/(60*8) # pulse speed
+        t = t/(60*8) # pulse speed
         s = math.cos(t)
         q = .2 + .05*s  # radius swell
-        pos_x = cls.selected_x
-        pos_y = cls.selected_y
         for y in range(8):
             for x in range(8):
-                z = ((x - pos_x)**2 + (y - pos_y)**2)**(q)
+                z = ((x - center_x)**2 + (y - center_y)**2)**(q)
                 z = rescale(z,mn=0,mx=(98)**(q),a=0,b=1)
                 hue,lum,sat = 30/360, 1-z, .6 + .05*s
                 r,g,b = colorsys.hls_to_rgb(hue,lum,sat)
                 colors.append([x*255.0 for x in [r,g,b]])
-        cls.load_page(colors)
+        return colors
 
     def draw(self, screen):
         screen.blit(self.image, self.pos)
@@ -443,6 +442,15 @@ def update(dt):
               pass
           print('bye.')
           sys.exit() # Not including this line crashes the script on Windows. Possibly
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_j:
+                game.painter.sampler.play_note(58)
+            elif event.key == pygame.K_k:
+                game.painter.sampler.play_note(59)
+            elif event.key == pygame.K_l:
+                game.painter.sampler.play_note(60)
+
+
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             #ui.clicked = True
             ui.dragging = True
