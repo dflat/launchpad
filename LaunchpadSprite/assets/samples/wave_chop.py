@@ -1,5 +1,7 @@
+#!/usr/bin/env python3
 import wave
 import os
+import sys
 
 def chop_into_samples(wav_path, out_dir, n_segments, seconds_per_cut=1,
                         start_note=48):
@@ -35,6 +37,23 @@ def make_midi_file_chromatic(start_note=24, octaves=6, note_len=480*4,
     mid.save(name)
     return mid
 
-def example():
-    chop_into_samples('chromatic_24_to_96.wav', out_dir='voice_plucks',
-                        n_segments=12*6, start_note=24)
+DEFAULT_START_NOTE = 24
+DEFAULT_SEGMENTS = 12*6
+if __name__ == '__main__':
+    program, *args = sys.argv
+    if args[0].lower() in ['h', '-h', 'help', '--help']:
+        print(f"USAGE: {__file__} source_wav_path out_dir_name [n_segments] [start_note]")
+        print(f"\t The default n_segments is {DEFAULT_SEGMENTS}")
+        print(f"\t The default start_note is {DEFAULT_START_NOTE}")
+        sys.exit(0)
+    source_wav = args[0]
+    out_dir = args[1]
+    n_segments = DEFAULT_SEGMENTS
+    start_note = DEFAULT_START_NOTE
+    if len(args) > 2:
+        n_segments = int(args[2])
+    if len(args) > 3:
+        start_note = int(args[3])
+    print(source_wav, out_dir, n_segments, start_note)
+    chop_into_samples(source_wav, out_dir, n_segments=n_segments,
+                                        seconds_per_cut=1, start_note=start_note)
