@@ -162,7 +162,7 @@ class Song:
         return cls.SONGS[name]
 
 Song('ddr_test', bpm=120, sample_dir='voice_plucks')
-Song('fallen_down', bpm=110, sample_dir='indian_flute', time_signature=(3,4))
+Song('fallen_down', bpm=110, sample_dir='voice_plucks', time_signature=(3,4))
 Song('mario_theme', bpm=90, sample_dir='dumb')
 
 class State_Canvas(State):

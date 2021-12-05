@@ -517,7 +517,6 @@ class Game:
             draw(self.screen)
             self.dt = self.fps_clock.tick(self.fps)
 
-
 class Menu:
     def event_loop(dt):
         ui.update(dt)
