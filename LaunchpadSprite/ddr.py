@@ -43,13 +43,20 @@ class TimingTrack: # unused for now, just using a default list atm...
     def __getitem__(self, index):
         return self.items[index]
 
+class TimeSignature:
+    def __init__(self, numerator, denominator):
+        self.numerator = numerator
+        self.denominator = denominator
+
 class TimingFrame:
-    def __init__(self, duration, measure, beat, sub_beat=0, is_triplet=False):
+    def __init__(self, duration, measure, beat, sub_beat=0,
+                    time_signature=TimeSignature(4,4), is_triplet=False):
         self.duration = duration
         self.measure = measure
         self.beat = beat
-        self.is_triplet = is_triplet
         self.sub_beat = sub_beat
+        self.time_signature = time_signature
+        self.is_triplet = is_triplet
 
 class TrackFrame:
     def __init__(self, items:'List[TrackItem]'):
@@ -90,10 +97,12 @@ class PlayTrack:
                             4: 4, 5: 24, 6:47, 7:56 }
     INTRO_PAD_FRAMES = 8
     OUTRO_PAD_FRAMES = 16
-    def __init__(self, midi_path, painter, bpm=120, ticks_per_beat=480, segment_ticks=40):
+    def __init__(self, midi_path, painter, bpm=120, time_signature=(4,4),
+                    ticks_per_beat=480, segment_ticks=40):
         self.midi_path = os.path.join(MIDI_DIR_PATH, midi_path)
         self.painter = painter
         self.bpm = bpm
+        self.time_signature = TimeSignature(*time_signature)
         self.ticks_per_beat = ticks_per_beat
         self.segment_ticks = segment_ticks
         self._prepare_play_track(cols=3)
@@ -113,7 +122,7 @@ class PlayTrack:
     def _recolor_frame(self, frame:TrackFrame, bonus=False, pad_hit=None):
         wall_pulse = {0:3, 1:2, 2:2, 3:2}
         hit_row_pulse = {0:30, 1:31, 2:30, 3:31}
-        bonus_pulse = {0:32, 1:40, 2:48, 3:56}
+        #bonus_pulse = {0:32, 1:40, 2:48, 3:56}
         bonus_pulse = {0:48, 1:40, 2:48, 3:40}
         for i in range(len(frame)):
             item = frame[i]
@@ -425,14 +434,13 @@ class PlayTrack:
         segs_per_quarter_note = 12
         timing_track = []
         new_segments = []
+        beats_per_bar = self.time_signature.numerator
         for i in range(self.INTRO_PAD_FRAMES): # intro pad timing
             measure = -1
-            beat = i // 4
-            #measure = i // 16
-            #measure -= self.INTRO_PAD_FRAMES // 16
-            timing_frame = TimingFrame(seg_ticks*3, measure, beat)
+            beat = i // beats_per_bar
+            timing_frame = TimingFrame(seg_ticks*3, measure, beat,
+                                        time_signature=self.time_signature)
             timing_track.append(timing_frame)
-            #new_segments.append([])
         def get_swing_ratio(ticks_per_q, ratio):
             assert(ratio >= 1)
             semi = ticks_per_q / 2
@@ -441,22 +449,23 @@ class PlayTrack:
             long = semi + taken
             return round(short), round(long)
         def divide_into_three(quarter_note, position):
-            measure, beat = divmod(position, 4)
+            measure, beat = divmod(position, beats_per_bar)
             divisions = quarter_note[::4]
             for i, triplet_hit in enumerate(divisions):
                 new_segments.append(triplet_hit)
-                timing_frame = TimingFrame(seg_ticks*4, measure, beat,
-                                            sub_beat=i, is_triplet=True)
+                timing_frame = TimingFrame(seg_ticks*4, measure, beat, sub_beat=i,
+                                time_signature=self.time_signature, is_triplet=True)
                 timing_track.append(timing_frame)
         def divide_into_four(quarter_note, position):
-            measure, beat = divmod(position, 4)
+            measure, beat = divmod(position, beats_per_bar)
             divisions = quarter_note[::3]
             swing_short, swing_long = get_swing_ratio(480, swing)
             for i, sixteenth_hit in enumerate(divisions):
                 eighth_ticks = swing_long if i < 2 else swing_short
                 new_segments.append(sixteenth_hit)
                 duration = round(eighth_ticks/2)
-                timing_frame = TimingFrame(duration, measure, beat, sub_beat=i)
+                timing_frame = TimingFrame(duration, measure, beat, sub_beat=i,
+                                            time_signature=self.time_signature)
                 timing_track.append(timing_frame)
         strikes = { 'triplet': (1,0,0,0,1,0,0,0,1,0,0,0) }
         # check a quarter note at a time, check for triplet spacing
@@ -471,10 +480,10 @@ class PlayTrack:
             beat_count += 1
         for i in range(self.OUTRO_PAD_FRAMES): # todo: fix consistency with padding
             measure = beat_count + i // 16
-            beat = i // 4
-            timing_frame = TimingFrame(seg_ticks*3, measure, beat)
+            beat = i // beats_per_bar
+            timing_frame = TimingFrame(seg_ticks*3, measure, beat,
+                                        time_signature=self.time_signature)
             timing_track.append(timing_frame)
-            #new_segments.append([])
         self.timing_track = timing_track
         self.segments = new_segments
 

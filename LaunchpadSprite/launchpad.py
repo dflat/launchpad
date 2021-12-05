@@ -146,6 +146,25 @@ class State_ChooseDDRSong:
     def to_ddr(self):
         pass
 
+class Song:
+    SONGS = { }
+    def __init__(self, name, bpm, sample_dir='voice_plucks', time_signature=(4,4)):
+        self.name = name
+        self.bpm = bpm
+        self.sample_dir = sample_dir
+        self.time_signature = time_signature 
+        self._register()
+    def _register(self):
+        Song.SONGS[self.name] = self
+
+    @classmethod
+    def get_metadata(cls, name):
+        return cls.SONGS[name]
+
+Song('ddr_test', bpm=120, sample_dir='voice_plucks')
+Song('fallen_down', bpm=110, sample_dir='voice_plucks', time_signature=(3,4))
+Song('mario_theme', bpm=90, sample_dir='dumb')
+
 class State_Canvas(State):
     rule = {State.CTRL['save']: ('State_SavePending', 'no_action'),
             State.CTRL['load']: ('State_LoadPending', 'no_action'),
@@ -155,9 +174,7 @@ class State_Canvas(State):
             State.CTRL['ddr_auto']: ('State_DDR', 'to_ddr_auto'), # TODO: fix state
             }
     def action(self, msg):
-        self.song = 'ddr_test'
-        self.bpm = 120
-        self.sample_dir = 'voice_plucks'
+        self.song = Song.get_metadata('fallen_down') # TODO: just send this object in
         if self.is_pad_press(msg):
             self.painter.paint()
         elif self.is_cc_press(msg):
@@ -172,11 +189,9 @@ class State_Canvas(State):
     def marquee(self):
         self.painter.scroll_text('See you in hell?', fps=20)
     def to_ddr(self):
-        self.painter.play_ddr_minigame(self.song, bpm=self.bpm,
-                                    rate=1, autoplay=False, sample_dir=self.sample_dir)
+        self.painter.play_ddr_minigame(self.song, rate=1, autoplay=False)
     def to_ddr_auto(self):
-        self.painter.play_ddr_minigame(self.song, bpm=self.bpm,
-                                    rate=1, autoplay=True, sample_dir=self.sample_dir)
+        self.painter.play_ddr_minigame(self.song, rate=1, autoplay=True)
     def no_action(self):
         pass
 
@@ -330,12 +345,12 @@ class Painter:
         self.sampler.remap(notes)
 
 
-    def play_ddr_minigame(self, song_name, rate=1, bpm=120,
-                            sample_dir=None, autoplay=False):
-        self.play_track = ddr.PlayTrack(song_name + '.mid', bpm=bpm, painter=self)
-        self.sampler.load_backing_track(song_name)
-        if sample_dir:
-            self.sampler.load_samples(sample_dir)
+    def play_ddr_minigame(self, song:Song, rate=1, autoplay=False):
+        self.play_track = ddr.PlayTrack(song.name + '.mid', bpm=song.bpm,
+                                        time_signature=song.time_signature, painter=self)
+        self.sampler.load_backing_track(song.name)
+        if song.sample_dir:
+            self.sampler.load_samples(song.sample_dir)
         t = threading.Thread(target=self.play_track.animate, args=(rate, autoplay))
         t.start()
         print('playing ddr minigame...')

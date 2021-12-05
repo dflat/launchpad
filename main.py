@@ -449,6 +449,8 @@ def update(dt):
                 game.painter.sampler.play_note(59)
             elif event.key == pygame.K_l:
                 game.painter.sampler.play_note(60)
+            elif event.key == pygame.K_m:
+                Menu.choose_song(game) 
 
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -503,15 +505,57 @@ class Game:
         self.painter = MultiPainter() 
 
     def run(self):
-        dt = 1/self.fps # dt is the time since last frame.
         Box._init_ports()
         Box.build_map()
         CCBox.build_cc()
-        while True:
-            update(dt) 
-            draw(self.screen)
-            dt = self.fps_clock.tick(self.fps)
+        self.dt = 1/self.fps # dt is the time since last frame.
+        self.main_loop()
 
+    def main_loop(self):
+        while True:
+            update(self.dt) 
+            draw(self.screen)
+            self.dt = self.fps_clock.tick(self.fps)
+
+
+class Menu:
+    def event_loop(dt):
+        ui.update(dt)
+        for event in pygame.event.get():
+            if event.type == QUIT:
+              pygame.quit() # Opposite of pygame.init
+              game.painter.stop()
+              Box.ping_device()
+              try:
+                  game.painter.play_track.stop_listening()
+              except AttributeError:
+                  pass
+              print('bye.')
+              sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_j:
+                    return -1
+                elif event.key == pygame.K_k:
+                    return -1
+                elif event.key == pygame.K_l:
+                    return
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                #ui.clicked = True
+                ui.dragging = True
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                ui.clicked = True
+                ui.dragging = False
+
+    def draw_song_menu():
+        game.screen.fill((0,0,0)) 
+        pygame.display.flip()
+
+    def choose_song(game):
+        while True:
+            exit_code = Menu.event_loop(game.dt)
+            if exit_code == -1:
+                return game.main_loop()
+            Menu.draw_song_menu()
+            
 game = Game(W, H)
 game.run()
-
