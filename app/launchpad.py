@@ -63,7 +63,8 @@ class State:
     QUICK_SLOTS = [19,29,39,49,59,69,79,89]
     CONTROL_KEYS = list(range(101,109)) + list(range(10,81,10))
     CTRL = {'marquee':101, 'ddr': 102, 'ddr_auto': 103, 'load':106,
-            'save':107, 'palette':108, 'brush_tool':10 ,'bucket_tool':20} 
+            'save':107, 'palette':108, 'brush_tool':10 ,'bucket_tool':20,
+            'animate_gallery': 80,}
     def __init__(self, painter):
         self.painter = painter      # shortcut to controller objects (painter/sampler)
         self.sampler = painter.sampler
@@ -175,6 +176,7 @@ class State_Canvas(State):
             State.CTRL['ddr_auto']: ('State_DDR', 'to_ddr_auto', ()), 
             State.CTRL['brush_tool']: ('State_Canvas', 'switch_tool', ('brush',)),
             State.CTRL['bucket_tool']: ('State_Canvas', 'switch_tool', ('bucket',)),
+            State.CTRL['animate_gallery']:('State_Canvas', 'animate_gallery', ()),
             }
     tools = {'brush':'paint', 'bucket':'flood_fill'}
     current_tool = 'brush'
@@ -195,6 +197,8 @@ class State_Canvas(State):
         self.painter.switch_to_palette(0)
     def marquee(self):
         self.painter.scroll_text('See you in hell?', fps=20)
+    def animate_gallery(self):
+        self.painter.animate_gallery()
     def switch_tool(self, tool):
         self.current_tool = tool
     def to_ddr(self):
@@ -347,6 +351,22 @@ class Painter:
         t = threading.Thread(target=text.animate, args=(fps, callback))
         t.start()
 
+    def store_animation(self):
+        pass
+
+    def animate_gallery(self, duration=1/15):
+        frame_sequence = [19,29,39,49,59,69,79,89]
+        pages = (self.gallery.load(page_id) for page_id in frame_sequence)
+        frames = [self._build_sysex(page.colors) for page in pages]
+        def animate(loops=10):
+            for _ in range(loops): 
+                for sysex_frame_msg in frames:
+                    self._send_msg(sysex_frame_msg)
+                    time.sleep(duration)
+            self.switch_to_canvas()
+        t = threading.Thread(target=animate)
+        t.start()
+
     def as_page(self, colors):
         return Page(colors)
 
@@ -364,16 +384,20 @@ class Painter:
         t.start()
         print('playing ddr minigame...')
         
-    def send_sysex(self, page, mode = 0):
+    def send_sysex(self, page, mode=0):
         """ 
         builds and sends a sysex msg for a page
         """
         assert(len(page.colors) == 64)
+        msg = self._build_sysex(page.colors, mode)
+        self._send_msg(msg)
+    
+    def _build_sysex(self, data, mode=0):
         bytes = [0, 32, 41, 2, 14, 3] #sysex RGB preamble
         for i in range(64):
-            spec = [mode, self.padmap[i], page.colors[i]]
+            spec = [mode, self.padmap[i], data[i]]
             bytes.extend(spec)
-        self._send_msg(mido.Message('sysex', data=bytes))
+        return mido.Message('sysex', data=bytes)
 
     def fill_page(self, color):
         self.canvas = Page([color for i in range(64)])
