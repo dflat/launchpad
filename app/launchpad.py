@@ -61,9 +61,9 @@ class SysexMarquee(fonts.Marquee):
 
 class State:
     QUICK_SLOTS = [19,29,39,49,59,69,79,89]
-    CONTROL_KEYS = list(range(101,109))
+    CONTROL_KEYS = list(range(101,109)) + list(range(10,81,10))
     CTRL = {'marquee':101, 'ddr': 102, 'ddr_auto': 103, 'load':106,
-            'save':107, 'palette':108} 
+            'save':107, 'palette':108, 'brush_tool':10 ,'bucket_tool':20} 
     def __init__(self, painter):
         self.painter = painter      # shortcut to controller objects (painter/sampler)
         self.sampler = painter.sampler
@@ -164,28 +164,39 @@ Song('fallen_down', bpm=110, sample_dir='voice_plucks', time_signature=(3,4))
 Song('mario_theme', bpm=90, sample_dir='dumb')
 
 class State_Canvas(State):
-    rule = {State.CTRL['save']: ('State_SavePending', 'no_action'),
-            State.CTRL['load']: ('State_LoadPending', 'no_action'),
-            State.CTRL['palette']: ('State_Palette', 'to_palette'),
-            State.CTRL['marquee']: ('State_Canvas', 'marquee'),
-            State.CTRL['ddr']: ('State_DDR', 'to_ddr'), # TODO: fix state
-            State.CTRL['ddr_auto']: ('State_DDR', 'to_ddr_auto'), # TODO: fix state
+    """
+    A rule is (next_state, transition_action, [arguments to transition_action])
+    """
+    rule = {State.CTRL['save']: ('State_SavePending', 'no_action', ()),
+            State.CTRL['load']: ('State_LoadPending', 'no_action', ()),
+            State.CTRL['palette']: ('State_Palette', 'to_palette', ()),
+            State.CTRL['marquee']: ('State_Canvas', 'marquee', ()),
+            State.CTRL['ddr']: ('State_DDR', 'to_ddr', ()), # TODO: fix state
+            State.CTRL['ddr_auto']: ('State_DDR', 'to_ddr_auto', ()), 
+            State.CTRL['brush_tool']: ('State_Canvas', 'switch_tool', ('brush',)),
+            State.CTRL['bucket_tool']: ('State_Canvas', 'switch_tool', ('bucket',)),
             }
+    tools = {'brush':'paint', 'bucket':'flood_fill'}
+    current_tool = 'brush'
+
     def action(self, msg):
         self.song = Song.get_metadata('fallen_down') # TODO: just send this object in
         if self.is_pad_press(msg):
-            self.painter.paint()
+            paint_func = getattr(self.painter, self.tools[self.current_tool])
+            paint_func()
         elif self.is_cc_press(msg):
             if msg.control in self.CONTROL_KEYS:
-                newstate, transition = self.rule.get(msg.control,
+                newstate, transition, args = self.rule.get(msg.control,
                                                 ('State_Canvas', 'no_action'))
                 transition_func = getattr(self, transition)
-                transition_func()
+                transition_func(*args)
                 self.new_state(eval(newstate))
     def to_palette(self):
         self.painter.switch_to_palette(0)
     def marquee(self):
         self.painter.scroll_text('See you in hell?', fps=20)
+    def switch_tool(self, tool):
+        self.current_tool = tool
     def to_ddr(self):
         self.painter.play_ddr_minigame(self.song, rate=1, autoplay=False)
     def to_ddr_auto(self):
@@ -203,8 +214,12 @@ class Page:
     def edit(self, index, color):
         self.colors[index] = color
 
+    def get_color(self, index):
+        return self.colors[index]
+
 class Gallery:
-    DATA_FILEPATH = 'gallery_items.txt'
+    DATA_FILEPATH = os.path.join(config.ASSETS_PATH, 'storage',
+                                                    'gallery_items.pickle')
     def __init__(self):
         try:
             with open(self.DATA_FILEPATH, 'rb') as f:
@@ -228,7 +243,7 @@ REV_PADMAP = {v:k for k,v  in PADMAP.items()}
 class Sampler:
     PAD_TO_MIDI = { } # pad_index -> midi_note
     MIDI_TO_SAMPLE = { } # midi note -> audio file
-    SAMPLE_ROOT = os.path.join(config.PROJECT_ROOT, 'assets/samples')
+    SAMPLE_ROOT = os.path.join(config.ASSETS_PATH, 'samples')
     SAMPLE_PACKS = { }
 
     def __init__(self, sample_dir):
@@ -239,8 +254,8 @@ class Sampler:
         self.input_q = queue.Queue()
 
     def load_backing_track(self, fname='mario_theme'):
-        pygame.mixer.music.load(os.path.join(config.PROJECT_ROOT,
-                                'assets', 'music', fname + '.mp3'))
+        pygame.mixer.music.load(os.path.join(config.ASSETS_PATH,
+                                'music', fname + '.mp3'))
 
     def load_samples(self, sample_dir):
         """
@@ -380,10 +395,38 @@ class Painter:
 
     def paint(self):
         pad_index = self.rev_padmap[self.msg.note]
-        self.canvas.edit(pad_index, self.current_color)
-        out_msg = mido.Message('note_on', note=self.msg.note,
-                                velocity=self.current_color)
+        self._paint(pad_index, self.current_color)
+
+    def _paint(self, pad_index, color):
+        self._edit_canvas(pad_index, color)
+        out_midi_note = self.padmap[pad_index]
+        out_msg = mido.Message('note_on', note=out_midi_note,
+                                velocity=color)
         self.send_note(out_msg)
+
+    def _edit_canvas(self, pad_index, color):
+        self.canvas.edit(pad_index, color)
+
+    def flood_fill(self):
+        pad_index = self.rev_padmap[self.msg.note]
+        cover_color = self.canvas.get_color(pad_index)
+        if self.current_color == cover_color:
+            return
+        self._flood_fill(pad_index, cover_color, visited=set())
+        self.switch_to_current_page()
+
+    def _flood_fill(self, pad_index, cover_color, visited):
+        self._edit_canvas(pad_index, self.current_color)
+        row, col = divmod(pad_index, 8)
+        neighbors = set([(row-1, col), (row+1, col), (row, col-1), (row, col+1)])
+        for r, c in neighbors - visited:
+            if 0 <= r < 8 and 0 <= c < 8:
+                visited.add((r,c))
+                neighbor_index = r*8 + c
+                neighbor_color = self.canvas.get_color(neighbor_index)
+                if neighbor_color != cover_color:
+                    continue
+                self._flood_fill(neighbor_index, cover_color, visited)
 
     def select_color(self):
         pad_index = self.rev_padmap[self.msg.note]

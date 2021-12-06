@@ -7,11 +7,12 @@ import pygame
 from pygame.locals import *
 import numpy as np
 import random
-from LaunchpadSprite import launchpad
+from app import launchpad
 import mido
 import queue
 import pickle 
-import LaunchpadSprite.config as config
+#import LaunchpadSprite.config as config
+from app import config
 
 program_inbox = queue.Queue()
 device_inbox = queue.Queue()
