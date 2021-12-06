@@ -52,8 +52,6 @@ def build_padmap(start=81, stop=1, step=-10, cols=8):
 ###------------  end helper functions ------------###
 
 # todo: build synthesizer w/gui ...use numpy
-# todo: build multiport system to sync emulator
-#    and physical midi controllers.
 
 class SysexMarquee(fonts.Marquee):
     SHADES = [4,5,6,7,0]
@@ -288,10 +286,6 @@ class Sampler:
         t = time.time()
         self.input_q.put({'type':'hit', 'pad_index': pad_index,
                             'time': t})
-        #note = self.PAD_TO_MIDI[pad_index]
-        #sound = self.MIDI_TO_SAMPLE.get(note, self.MISS_SOUND)
-        #if sound:
-        #    sound.play()
 
     def remap(self, notes):
         for i in range(len(notes)):
@@ -351,7 +345,7 @@ class Painter:
         self.sampler.load_backing_track(song.name)
         if song.sample_dir:
             self.sampler.load_samples(song.sample_dir)
-        t = threading.Thread(target=self.play_track.animate, args=(rate, autoplay))
+        t = threading.Thread(target=self.play_track.play, args=(rate, autoplay))
         t.start()
         print('playing ddr minigame...')
         
