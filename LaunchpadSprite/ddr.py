@@ -92,6 +92,7 @@ class TrackItem:
             self.color = None # will be assigned by column in _recolor_frame
             #self.FRAME_RECOLOR_MAP[self.note] 
 
+
 class PlayTrack:
     FRAME_RECOLOR_MAP = {-1: 3, -2: 0, -3:59, 0: 8, 1: 32, 2: 12, 3: 44,
                             4: 4, 5: 24, 6:47, 7:56 }
@@ -122,8 +123,7 @@ class PlayTrack:
     def _recolor_frame(self, frame:TrackFrame, bonus=False, pad_hit=None):
         wall_pulse = {0:3, 1:2, 2:2, 3:2}
         hit_row_pulse = {0:30, 1:31, 2:30, 3:31}
-        #bonus_pulse = {0:32, 1:40, 2:48, 3:56}
-        bonus_pulse = {0:48, 1:40, 2:48, 3:40}
+        bonus_pulse = {0:48, 1:52, 2:52, 3:52}
         for i in range(len(frame)):
             item = frame[i]
             if item.is_wall:
@@ -140,17 +140,14 @@ class PlayTrack:
             else:
                 row = 0
             if item.is_wall:
-                if not bonus:
-                    base_color = 11#8 + frame.timing.sub_beat#wall_pulse[frame.timing.beat]
-                elif bonus:
-                    base_color = bonus_pulse[frame.timing.beat] + frame.timing.sub_beat
+                base_color = 2
+                #if pad_hit:
+                #    base_color = 3
                 if i//8 == 7: # color bottom row walls
                     base_color = 2#-frame.timing.sub_beat#hit_row_pulse[frame.timing.beat]
-                    if pad_hit:
-                        base_color = 3
+                    if bonus:
+                        base_color = bonus_pulse[frame.timing.beat] + frame.timing.sub_beat
             item.color = base_color + row // 2
-            #if pad_hit and i == pad_hit:
-            #    item.color = 0
 
     def _circle_around_hit(self, i, pad_index):
         y, x = divmod(i, 8)
