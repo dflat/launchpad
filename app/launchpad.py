@@ -187,7 +187,7 @@ class State_Canvas(State):
         elif self.is_cc_press(msg):
             if msg.control in self.CONTROL_KEYS:
                 newstate, transition, args = self.rule.get(msg.control,
-                                                ('State_Canvas', 'no_action'))
+                                                ('State_Canvas', 'no_action', ()))
                 transition_func = getattr(self, transition)
                 transition_func(*args)
                 self.new_state(eval(newstate))
